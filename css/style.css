@@ -419,15 +419,62 @@ table.tb .empty { text-align: center; color: var(--ink-3); padding: 30px; font-s
   .ship-doc { box-shadow: none; border: none; }
 }
 .ship-doc {
-  background: #fff;
-  border: 1px solid var(--line);
+  background: #FFFBF2;
+  background-image:
+    radial-gradient(rgba(232,168,124,.05) 1px, transparent 1px),
+    radial-gradient(rgba(168,184,158,.04) 1px, transparent 1px);
+  background-size: 28px 28px, 42px 42px;
+  background-position: 0 0, 14px 14px;
+  border: 2px solid var(--line);
   border-radius: var(--r-md);
   padding: 36px 40px;
   font-family: "Noto Serif TC", "Noto Sans TC", serif;
   color: var(--ink);
   max-width: 780px;
   margin: 0 auto;
+  position: relative;
+  overflow: hidden;
 }
+/* 浮水印 LOGO（用真 img，html2canvas 才抓得到） */
+.ship-doc .watermark {
+  position: absolute;
+  width: min(440px, 70%);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.07;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+.ship-doc > *:not(.watermark) { position: relative; z-index: 1; }
+
+/* 感謝區 */
+.ship-doc .thanks {
+  margin-top: 28px;
+  padding: 22px 14px 14px;
+  border-top: 2px dashed var(--orange);
+  text-align: center;
+}
+.ship-doc .thanks .msg {
+  font-size: 1.25rem;
+  color: var(--tomato);
+  font-weight: 700;
+  letter-spacing: .12em;
+  font-family: "Noto Serif TC", serif;
+}
+.ship-doc .thanks .sub {
+  color: var(--ink-3);
+  font-size: .88rem;
+  margin-top: 6px;
+  letter-spacing: .12em;
+}
+.ship-doc .thanks .handler {
+  margin-top: 16px;
+  font-size: .82rem;
+  color: var(--ink-3);
+  letter-spacing: .05em;
+}
+
 .ship-doc .head {
   display: flex; justify-content: space-between; align-items: flex-start;
   border-bottom: 2px solid var(--ink-2);

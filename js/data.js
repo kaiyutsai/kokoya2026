@@ -11,7 +11,7 @@
 import {
   db, collection, doc, addDoc, getDoc, getDocs, setDoc,
   updateDoc, deleteDoc, query, where, orderBy, limit,
-  serverTimestamp, onSnapshot, runTransaction, Timestamp
+  serverTimestamp, onSnapshot, runTransaction, Timestamp, writeBatch
 } from "./firebase-config.js";
 
 const me = () => window.__currentUser || { email:"unknown", name:"unknown", uid:"unknown" };
@@ -238,13 +238,17 @@ export async function deletePurchase(id) {
 export async function nextShipmentNo() {
   const today = new Date();
   const ymd = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,"0")}${String(today.getDate()).padStart(2,"0")}`;
+  // 只用 where(==) 單欄查（不需要 composite index），客戶端找最大 seq
   const snap = await getDocs(query(
     collection(db, "shipments"),
-    where("docDateKey", "==", ymd),
-    orderBy("seq", "desc"),
-    limit(1)
+    where("docDateKey", "==", ymd)
   ));
-  const seq = snap.empty ? 1 : (snap.docs[0].data().seq + 1);
+  let maxSeq = 0;
+  snap.docs.forEach(d => {
+    const s = Number(d.data().seq) || 0;
+    if (s > maxSeq) maxSeq = s;
+  });
+  const seq = maxSeq + 1;
   return { docNo: `SH-${ymd}-${String(seq).padStart(3,"0")}`, ymd, seq };
 }
 export async function addShipment(ship){
@@ -403,52 +407,53 @@ export async function confirmBatch(id) {
 
   for (const raw of (batch.orders || [])) {
     const o = _normalizeOrder(raw);
-    if (o.saleId) {
-      updatedOrders.push(o);
-      continue; // 已建過跳過
-    }
     const validLines = o.lines.filter(l => l.itemId && l.qty > 0);
-    if (!validLines.length) {
-      errors.push(`「${o.customer || "(無客戶名)"}」沒有有效品項，已跳過`);
-      updatedOrders.push(o);
-      continue;
-    }
 
-    // 建銷貨單
-    try {
-      const saleId = await addSale({
-        date: deliveryDate,
-        customer: o.customer,
-        note: `[${batch.name}] ${o.notes || ""}`.trim(),
-        lines: validLines.map(l => ({ itemId: l.itemId, name: l.name, qty: l.qty, price: l.price }))
-      });
-      o.saleId = saleId;
-    } catch (err) {
-      errors.push(`「${o.customer || "(無客戶名)"}」銷貨建立失敗：${err.message}`);
-      updatedOrders.push(o);
-      continue;
-    }
-
-    // 有地址才建出貨單
-    if (o.address && o.address.trim()) {
+    // 銷貨：未建過才建
+    if (!o.saleId) {
+      if (!validLines.length) {
+        errors.push(`「${o.customer || "(無客戶名)"}」沒有有效品項，已跳過`);
+        updatedOrders.push(o);
+        continue;
+      }
       try {
-        const ship = await addShipment({
+        const saleId = await addSale({
           date: deliveryDate,
-          recipient: o.customer,
-          phone: o.phone,
-          address: o.address,
-          handlerName: batch.deliveryStaff || me().name,
+          customer: o.customer,
           note: `[${batch.name}] ${o.notes || ""}`.trim(),
-          lines: validLines.map(l => ({
-            itemId: l.itemId, name: l.name, unit: l.unit || "", qty: l.qty, price: l.price
-          }))
+          lines: validLines.map(l => ({ itemId: l.itemId, name: l.name, qty: l.qty, price: l.price }))
         });
-        o.shipmentId = ship.id;
-        o.shipmentNo = ship.docNo;
+        o.saleId = saleId;
       } catch (err) {
-        errors.push(`「${o.customer || "(無客戶名)"}」出貨單建立失敗（銷貨已建）：${err.message}`);
+        errors.push(`「${o.customer || "(無客戶名)"}」銷貨建立失敗：${err.message}`);
+        updatedOrders.push(o);
+        continue;
       }
     }
+
+    // 出貨單：未建過才建（不管有沒有地址，一律建；上次失敗的這次會重試）
+    if (!o.shipmentId) {
+      if (validLines.length) {
+        try {
+          const ship = await addShipment({
+            date: deliveryDate,
+            recipient: o.customer,
+            phone: o.phone || "",
+            address: o.address || "",
+            handlerName: batch.deliveryStaff || me().name,
+            note: `[${batch.name}] ${o.notes || ""}`.trim(),
+            lines: validLines.map(l => ({
+              itemId: l.itemId, name: l.name, unit: l.unit || "", qty: l.qty, price: l.price
+            }))
+          });
+          o.shipmentId = ship.id;
+          o.shipmentNo = ship.docNo;
+        } catch (err) {
+          errors.push(`「${o.customer || "(無客戶名)"}」出貨單建立失敗（銷貨已建）：${err.message}`);
+        }
+      }
+    }
+
     successes.push(o.customer || "(無名)");
     updatedOrders.push(o);
   }
@@ -485,4 +490,83 @@ export async function saveLookups(data) {
     updatedAt: serverTimestamp(),
     updatedBy: me().email
   }, { merge: true });
+}
+
+// ============ 系統資料總覽 / 危險區批次清除 ============
+// 一次抓所有 collection 的計數與總額（不分日期、全部）
+export async function getDataStats() {
+  const [items, sales, purchases, shipments, batches] = await Promise.all([
+    getDocs(collection(db, "items")),
+    getDocs(collection(db, "sales")),
+    getDocs(collection(db, "purchases")),
+    getDocs(collection(db, "shipments")),
+    getDocs(collection(db, "batches"))
+  ]);
+  const sumTotal = snap => snap.docs.reduce((s, d) => s + (Number(d.data().total) || Number(d.data().totalAmount) || 0), 0);
+  const stockSummary = items.docs.reduce((acc, d) => {
+    const i = d.data();
+    acc.totalStockValue += (Number(i.stock)||0) * (Number(i.avgCost)||0);
+    if (Number(i.stock||0) <= 0) acc.outOfStock++;
+    else if (Number(i.stock||0) <= Number(i.lowStock ?? 5)) acc.lowStock++;
+    return acc;
+  }, { totalStockValue: 0, lowStock: 0, outOfStock: 0 });
+
+  const batchStatuses = batches.docs.map(d => d.data().status);
+
+  return {
+    items: {
+      count: items.size,
+      lowStock: stockSummary.lowStock,
+      outOfStock: stockSummary.outOfStock,
+      totalStockValue: stockSummary.totalStockValue
+    },
+    sales:     { count: sales.size,     total: sumTotal(sales) },
+    purchases: { count: purchases.size, total: sumTotal(purchases) },
+    shipments: { count: shipments.size },
+    batches: {
+      count: batches.size,
+      draft: batchStatuses.filter(s => s !== "completed").length,
+      completed: batchStatuses.filter(s => s === "completed").length
+    }
+  };
+}
+
+// 清空指定 collection 的所有文件（僅 admin 能成功，受 firestore.rules 控管）
+export async function clearCollection(name) {
+  const allowed = ["items", "sales", "purchases", "shipments", "batches"];
+  if (!allowed.includes(name)) throw new Error("不允許清空 collection: " + name);
+  const snap = await getDocs(collection(db, name));
+  if (snap.empty) return 0;
+  // Firestore writeBatch 限制 500 個操作 → 分批
+  let total = 0;
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    total += Math.min(400, docs.length - i);
+  }
+  return total;
+}
+
+// 重置全部交易資料：清 sales/purchases/shipments/batches + items 的 stock/avgCost 歸零
+// 品項主檔保留（只重置庫存與成本）
+export async function resetTransactionsAndStock() {
+  const result = {};
+  for (const name of ["sales", "purchases", "shipments", "batches"]) {
+    result[name] = await clearCollection(name);
+  }
+  const itemsSnap = await getDocs(collection(db, "items"));
+  let resetCount = 0;
+  const docs = itemsSnap.docs;
+  for (let i = 0; i < docs.length; i += 400) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + 400).forEach(d =>
+      batch.update(d.ref, { stock: 0, avgCost: 0, updatedAt: serverTimestamp(), updatedBy: me().email })
+    );
+    await batch.commit();
+    resetCount += Math.min(400, docs.length - i);
+  }
+  result.itemsReset = resetCount;
+  return result;
 }

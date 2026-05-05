@@ -7,6 +7,8 @@
 <link rel="icon" href="assets/logo-fallback.svg">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<!-- html2canvas：用於把出貨單畫面轉成 JPG 下載 -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
 <main class="container no-print">
@@ -58,8 +60,10 @@
 
 <!-- 列印預覽區 -->
 <section id="printArea" class="container hidden" style="padding-top:30px">
-  <div class="no-print flex" style="justify-content:flex-end;margin-bottom:14px;gap:8px">
+  <div class="no-print flex" style="justify-content:flex-end;margin-bottom:14px;gap:8px;flex-wrap:wrap">
     <button class="btn ghost" id="btnBack">← 返回</button>
+    <button class="btn ghost" id="btnDownloadJpg">📷 下載圖片 (JPG)</button>
+    <button class="btn ghost" id="btnDownloadDoc">📥 下載 Word (.doc)</button>
     <button class="btn primary" id="btnPrint">🖨 列印 / 另存 PDF</button>
   </div>
   <div class="ship-doc" id="doc"></div>
@@ -194,14 +198,88 @@
   // ----- 預覽列印 -----
   const $form  = document.querySelector("main");
   const $print = document.getElementById("printArea");
+  let currentShipment = null;
   document.getElementById("btnBack").addEventListener("click", () => {
     $print.classList.add("hidden"); $form.classList.remove("hidden");
   });
   document.getElementById("btnPrint").addEventListener("click", () => window.print());
 
+  // 下載 JPG（用 html2canvas）
+  document.getElementById("btnDownloadJpg").addEventListener("click", async () => {
+    if (!currentShipment) return;
+    if (typeof html2canvas !== "function") { toast("html2canvas 未載入，請檢查網路", "err"); return; }
+    const $doc = document.getElementById("doc");
+    const $btn = document.getElementById("btnDownloadJpg");
+    $btn.disabled = true;
+    $btn.textContent = "⏳ 產生中…";
+    try {
+      const canvas = await html2canvas($doc, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+      const link = document.createElement("a");
+      link.download = `${currentShipment.docNo}_${currentShipment.recipient || "出貨單"}.jpg`;
+      link.href = canvas.toDataURL("image/jpeg", 0.95);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => link.remove(), 100);
+      toast("✓ JPG 已下載", "ok");
+    } catch (err) {
+      console.error(err);
+      toast("產生 JPG 失敗：" + err.message, "err");
+    }
+    $btn.disabled = false;
+    $btn.textContent = "📷 下載圖片 (JPG)";
+  });
+
+  // 下載 Word（.doc）— 用 HTML+Word MIME 的 trick，Word 開啟後可另存為 .docx
+  document.getElementById("btnDownloadDoc").addEventListener("click", () => {
+    if (!currentShipment) return;
+    const $doc = document.getElementById("doc");
+    // 拿掉 img（Word 解不到相對路徑，移除避免破圖框）
+    let docHTML = $doc.outerHTML.replace(/<img[^>]*>/g, "");
+    const wordHTML = `<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset='utf-8'>
+<title>出貨單 ${currentShipment.docNo}</title>
+<style>
+  body { font-family: 'Microsoft JhengHei', '微軟正黑體', PMingLiU, serif; padding: 20px; color: #4A3325; }
+  .ship-doc { padding: 0; }
+  .ship-doc .head { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 2px solid #4A3325; padding-bottom: 14px; }
+  .ship-doc .title { font-size: 24pt; font-weight: 700; letter-spacing: 0.4em; }
+  .ship-doc .sub { font-size: 10pt; color: #8B7355; letter-spacing: 0.3em; }
+  .ship-doc .meta { margin-bottom: 18px; }
+  .ship-doc .meta > div { display: inline-block; margin: 0 30px 10px 0; }
+  .ship-doc .meta .lbl { font-size: 9pt; color: #8B7355; }
+  .ship-doc .meta .val { font-size: 11pt; font-weight: 500; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  table th, table td { border: 1px solid #888; padding: 6px 8px; font-size: 10pt; }
+  table th { background: #F2EADB; }
+  table td.num, table th.num { text-align: right; }
+  .totals { text-align: right; margin-top: 12px; }
+  .totals .row { font-size: 10pt; padding: 4px 0; }
+  .totals .grand { font-size: 14pt; font-weight: 700; border-top: 2px solid #4A3325; padding-top: 8px; color: #C97B63; }
+  .signs { margin-top: 50px; }
+  .signs .sig { display: inline-block; width: 30%; border-top: 1px solid #4A3325; padding-top: 6px; font-size: 9pt; text-align: center; margin-right: 3%; }
+</style>
+</head>
+<body>
+${docHTML}
+</body>
+</html>`;
+    const blob = new Blob(["﻿", wordHTML], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${currentShipment.docNo}_${currentShipment.recipient || "出貨單"}.doc`;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 100);
+    toast("✓ Word 檔已下載", "ok");
+  });
+
   async function previewDoc(id) {
     const s = await getShipment(id);
     if (!s) return toast("找不到此出貨單", "err");
+    currentShipment = s;
     const linesHtml = (s.lines||[]).map((l,i)=>`
       <tr>
         <td>${i+1}</td>
@@ -211,7 +289,11 @@
         <td class="num">${fmt.money(l.price)}</td>
         <td class="num">${fmt.money(Number(l.qty)*Number(l.price))}</td>
       </tr>`).join("");
+    const hasPhone   = s.phone && s.phone.trim();
+    const hasAddress = s.address && s.address.trim();
     document.getElementById("doc").innerHTML = `
+      <img class="watermark" src="assets/logo.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" alt="">
+
       <div class="head">
         <div>
           <div class="title">出 貨 單</div>
@@ -227,9 +309,9 @@
       <div class="meta">
         <div><div class="lbl">單號</div><div class="val">${s.docNo}</div></div>
         <div><div class="lbl">出貨日期</div><div class="val">${fmt.date(s.date)}</div></div>
-        <div><div class="lbl">收貨人</div><div class="val">${s.recipient||""}</div></div>
-        <div><div class="lbl">聯絡電話</div><div class="val">${s.phone||""}</div></div>
-        <div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address||""}</div></div>
+        <div><div class="lbl">收貨人</div><div class="val">${s.recipient||"—"}</div></div>
+        ${hasPhone ? `<div><div class="lbl">聯絡電話</div><div class="val">${s.phone}</div></div>` : ""}
+        ${hasAddress ? `<div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address}</div></div>` : ""}
       </div>
 
       <table>
@@ -246,10 +328,10 @@
 
       ${s.note ? `<div style="margin-top:18px;padding:10px 14px;border-left:3px solid var(--orange);background:var(--paper-2);border-radius:0 8px 8px 0;font-size:.92rem">備註：${s.note}</div>` : ""}
 
-      <div class="signs">
-        <div class="sig">收貨人簽收</div>
-        <div class="sig">經辦人員：${s.handlerName||""}</div>
-        <div class="sig">果果家 KOKOYA</div>
+      <div class="thanks">
+        <div class="msg">🍎 感謝您的購買 ❤️ 果果家 KOKOYA 感謝您 🍎</div>
+        <div class="sub">新鮮直送 · 用心挑選 · 期待再次相遇</div>
+        <div class="handler">出貨日期：${fmt.date(s.date)}</div>
       </div>
     `;
     $form.classList.add("hidden");

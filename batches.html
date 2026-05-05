@@ -166,6 +166,35 @@
   </section>
 </main>
 
+<!-- ===== Modal: 快速新增品項（AI 識別到不存在 / SKU 匯總找不到品項時用） ===== -->
+<div class="modal-mask" id="quickItemModal">
+  <div class="modal">
+    <div class="card-h"><h2>🍎 補建品項</h2></div>
+    <p class="muted" style="font-size:.9rem;line-height:1.6;margin:0 0 12px">
+      系統發現「<b id="qiOrigName" style="color:var(--ink-2)"></b>」這個品項不存在於品項清單中。<br>
+      補建後會<b>自動連結</b>所有相關訂單行，不用重新打。
+    </p>
+    <form id="quickItemForm">
+      <div class="row-fields">
+        <div class="field"><label>品項名稱 *</label>
+          <input class="input" id="qiNameInput" required></div>
+        <div class="field"><label>單位</label>
+          <input class="input" id="qiUnit" placeholder="例：顆／盒／斤" value="顆"></div>
+      </div>
+      <div class="row-fields">
+        <div class="field"><label>建議售價（每基本單位）</label>
+          <input class="input" id="qiPrice" type="number" min="0" step="1"></div>
+        <div class="field"><label>每箱數量（選填，進貨用）</label>
+          <input class="input" id="qiPack" type="number" min="0" step="1"></div>
+      </div>
+      <div class="flex" style="justify-content:flex-end;margin-top:14px">
+        <button type="button" class="btn ghost" id="btnQiCancel">取消</button>
+        <button type="submit" class="btn primary">建立並重新配對</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ===== Modal: AI 解析貼上 ===== -->
 <div class="modal-mask" id="aiModal">
   <div class="modal wide" style="max-width:760px">
@@ -217,7 +246,7 @@
         <div class="field"><label>聯絡電話</label><input class="input" id="oPhone" placeholder="0912-345-678"></div>
       </div>
       <div class="field">
-        <label>收貨地址 <span class="muted" style="font-weight:normal">（留空 = 只建銷貨單，不建出貨單）</span></label>
+        <label>收貨地址 <span class="muted" style="font-weight:normal">（可留空，仍會建立出貨單）</span></label>
         <input class="input" id="oAddr" placeholder="例：高雄市鳳山區中山路 100 號">
       </div>
       <div class="row-fields">
@@ -263,7 +292,8 @@
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
   import {
     listItems, listBatches, getBatch, addBatch, updateBatch, deleteBatch,
-    confirmBatch, aggregateBatch, getLookups, buildItemTierOptions
+    confirmBatch, aggregateBatch, getLookups, buildItemTierOptions,
+    upsertItem
   } from "./js/data.js";
   import { parseOrders } from "./js/ai-parse.js";
 
@@ -378,8 +408,11 @@
     document.getElementById("dTitle").textContent = isCompleted ? "📋 批次明細（已確認）" : "📋 批次明細";
     document.getElementById("dStatus").innerHTML = isCompleted ? `<span class="tag done">已確認出貨</span>` : `<span class="tag draft">草稿</span>`;
 
-    // admin 才顯示刪除
-    document.getElementById("btnDeleteBatch").style.display = (currentBatchId && isAdmin(me.email)) ? "inline-flex" : "none";
+    // 草稿任何人可刪、已確認的只有 admin 可刪
+    const canDelete = currentBatchId && (isAdmin(me.email) || currentBatch.status !== "completed");
+    document.getElementById("btnDeleteBatch").style.display = canDelete ? "inline-flex" : "none";
+    document.getElementById("btnDeleteBatch").textContent =
+      currentBatch.status === "completed" ? "🗑 刪除整個批次" : "🗑 刪除草稿";
 
     renderOrders();
     renderSku();
@@ -425,7 +458,11 @@
   // ----- 刪除批次 -----
   document.getElementById("btnDeleteBatch").addEventListener("click", async () => {
     if (!currentBatchId) return;
-    if (!confirm(`確定刪除批次「${currentBatch.name}」？\n注意：已建立的銷貨單/出貨單不會自動刪，需自行去對應頁面刪除。`)) return;
+    const isDraft = currentBatch.status !== "completed";
+    const msg = isDraft
+      ? `刪除草稿批次「${currentBatch.name}」？\n（草稿尚未建出任何銷貨/出貨單，可放心刪）`
+      : `確定刪除批次「${currentBatch.name}」？\n⚠️ 已建立的銷貨單/出貨單不會自動刪，需自行去對應頁面刪除。`;
+    if (!confirm(msg)) return;
     try {
       await deleteBatch(currentBatchId);
       toast("已刪除", "ok");
@@ -453,7 +490,7 @@
       if (o.shipmentNo) tags.push(`<span class="tag in">${o.shipmentNo}</span>`);
       if (o.isPaid) tags.push(`<span class="tag ok">已收款</span>`);
       else if (o.paymentMethod) tags.push(`<span class="tag warn">${{cash:"現金", transfer:"匯款", other:"其他"}[o.paymentMethod]||o.paymentMethod}</span>`);
-      const addrTag = o.address ? `<span class="muted" style="font-size:.82rem">📍 ${o.address}</span>` : `<span class="muted" style="font-size:.78rem;color:#B07418">⚠ 無地址（不會建出貨單）</span>`;
+      const addrTag = o.address ? `<span class="muted" style="font-size:.82rem">📍 ${o.address}</span>` : `<span class="muted" style="font-size:.78rem">📍 無地址</span>`;
 
       return `
         <div class="order-card ${isDone ? "done" : ""}">
@@ -538,7 +575,8 @@
             ${pack > 0 ? `<div class="muted" style="font-size:.78rem">${pack} ${s.unit}/${boxU}</div>` : ""}
           </td>
           <td class="num">${fmt.num(s.totalQty)} ${s.unit}</td>
-          <td class="num">${item ? fmt.num(stock) + " " + s.unit : `<span style="color:var(--tomato)">品項已刪除</span>`}</td>
+          <td class="num">${item ? fmt.num(stock) + " " + s.unit
+            : `<button class="btn ghost" data-quickadd="${(s.name||'').replace(/"/g,'&quot;')}" style="font-size:.78rem;padding:4px 8px;color:var(--tomato);border-color:var(--tomato)">+ 補建此品項</button>`}</td>
           <td class="num">${item ? (diff >= 0 ? `+${fmt.num(diff)}` : fmt.num(diff)) : "—"}</td>
           <td>${suggest}</td>
         </tr>`;
@@ -565,7 +603,7 @@
     let warn = lackCount > 0
       ? `<span style="color:var(--tomato);font-weight:600">⚠ 有 ${lackCount} 個品項庫存不足</span>，仍可確認但庫存將變負，建議先去「進貨」補貨。<br>`
       : `<span style="color:var(--leaf-deep)">✓ 所有品項庫存充足。</span><br>`;
-    $hint.innerHTML = warn + `按下確認後，系統會：<br>① 為每筆訂單建立<b>銷貨單</b>（自動扣庫存）<br>② 有地址者額外建立<b>出貨單</b>（可列印）<br>③ 已建單的客戶不會重複建立`;
+    $hint.innerHTML = warn + `按下確認後，系統會：<br>① 為每筆訂單建立<b>銷貨單</b>（自動扣庫存）<br>② 同時建立<b>出貨單</b>（可列印；地址留空也照建）<br>③ 已建單的客戶不會重複建立`;
     $btn.disabled = false;
     $btn.textContent = "✅ 確認出貨（建立銷貨單 + 出貨單）";
   }
@@ -813,7 +851,14 @@
     $l.innerHTML = aiParsed.map((o, i) => {
       const linesHtml = (o.lines||[]).map(l => {
         const unmatched = !l.itemId;
-        return `<div style="${unmatched ? 'color:var(--tomato)' : ''}">${l.name||"?"} × ${fmt.num(l.qty||0)} ${l.unit||""} @ $${fmt.num(l.price||0)}${unmatched ? ' ⚠未配對品項' : ''}</div>`;
+        const text = `${l.name||"?"} × ${fmt.num(l.qty||0)} ${l.unit||""} @ $${fmt.num(l.price||0)}`;
+        if (unmatched) {
+          return `<div style="color:var(--tomato);display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0">
+            <span>${text} ⚠未配對</span>
+            <button type="button" class="btn ghost" data-quickadd="${(l.name||'').replace(/"/g,'&quot;')}" style="font-size:.76rem;padding:3px 8px;color:var(--tomato);border-color:var(--tomato)">+ 新增此品項</button>
+          </div>`;
+        }
+        return `<div>${text}</div>`;
       }).join("");
       const total = (o.lines||[]).reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.price)||0), 0);
       const tags = [];
@@ -883,6 +928,96 @@
     await autoPersist();
     const msg = `✓ 加入 ${added} 筆訂單${skipped ? `（${skipped} 筆因無有效品項而略過）` : ""}`;
     toast(msg, added ? "ok" : "err");
+  });
+
+  // ============ 快速新增品項 ============
+  // 觸發來源：SKU 匯總找不到品項 / AI 解析未配對行的「+ 新增此品項」按鈕
+  const $qiModal = document.getElementById("quickItemModal");
+
+  // 用 document delegation 接 [data-quickadd] 點擊（兩處都會觸發）
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-quickadd]");
+    if (!btn) return;
+    const name = btn.dataset.quickadd;
+    if (!name) return;
+    e.preventDefault();
+    openQuickItemModal(name);
+  });
+
+  function openQuickItemModal(name) {
+    document.getElementById("qiOrigName").textContent = name;
+    document.getElementById("qiNameInput").value = name;
+    document.getElementById("qiUnit").value = "顆";
+    document.getElementById("qiPrice").value = "";
+    document.getElementById("qiPack").value = "";
+    $qiModal.classList.add("show");
+    setTimeout(() => document.getElementById("qiPrice").focus(), 50);
+  }
+  function closeQuickItemModal() { $qiModal.classList.remove("show"); }
+  document.getElementById("btnQiCancel").addEventListener("click", closeQuickItemModal);
+  $qiModal.addEventListener("click", e => { if (e.target === $qiModal) closeQuickItemModal(); });
+
+  document.getElementById("quickItemForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const origName = document.getElementById("qiOrigName").textContent;
+    const name  = document.getElementById("qiNameInput").value.trim();
+    const unit  = document.getElementById("qiUnit").value.trim() || "顆";
+    const price = Number(document.getElementById("qiPrice").value) || 0;
+    const pack  = Number(document.getElementById("qiPack").value) || 0;
+    if (!name) return toast("請填品項名稱", "err");
+
+    try {
+      const newId = await upsertItem(null, {
+        name, unit, price,
+        defaultPackSize: pack,
+        boxUnit: "箱",
+        lowStock: 5
+      });
+      toast(`✓ 「${name}」已建立`, "ok");
+      items = await listItems();
+
+      // 自動連結：把 currentBatch.orders 中所有空 itemId 又名稱相符的 line 補上 itemId
+      let linked = 0;
+      if (currentBatch?.orders) {
+        currentBatch.orders.forEach(o => {
+          (o.lines || []).forEach(l => {
+            if (!l.itemId && (l.name === origName || l.name === name)) {
+              l.itemId = newId;
+              if (!l.unit) l.unit = unit;
+              linked++;
+            }
+          });
+        });
+      }
+      // 自動連結：AI 解析結果暫存 (aiParsed) 也要更新
+      if (Array.isArray(aiParsed) && aiParsed.length) {
+        aiParsed.forEach(o => {
+          (o.lines || []).forEach(l => {
+            if (!l.itemId && (l.name === origName || l.name === name)) {
+              l.itemId = newId;
+              if (!l.unit) l.unit = unit;
+              linked++;
+            }
+          });
+        });
+        // 重畫 AI 結果預覽（如果還開著）
+        if (!document.getElementById("aiResult").classList.contains("hidden")) {
+          renderAiResult({ orders: aiParsed, warnings: [] });
+        }
+      }
+
+      if (linked > 0) {
+        toast(`已自動連結 ${linked} 筆訂單行`, "ok");
+        if (currentBatch?.orders?.length) await autoPersist();
+      }
+
+      closeQuickItemModal();
+      renderOrders();
+      renderSku();
+    } catch (err) {
+      console.error(err);
+      toast("建立失敗：" + err.message, "err");
+    }
   });
 
   // ============ 啟動 ============

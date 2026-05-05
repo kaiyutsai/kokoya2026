@@ -75,12 +75,38 @@
         <button class="btn primary" id="btnAddStaff" type="button">＋ 新增</button>
       </div>
     </div>
+
+    <!-- 系統資料總覽 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h">
+        <h2>📊 系統資料總覽</h2>
+        <button class="btn ghost" type="button" id="btnReloadStats">🔄 重新載入</button>
+      </div>
+      <div id="statsBlock" class="muted" style="text-align:center;padding:20px">點上方「🔄 重新載入」開始查詢…</div>
+    </div>
+
+    <!-- 危險區 -->
+    <div class="card" style="margin-top:14px;border-color:#E8B4B4;background:#FFF7F2">
+      <div class="card-h"><h2 style="color:var(--tomato)">⚠️ 危險區</h2></div>
+      <p style="font-size:.92rem;line-height:1.7;color:var(--ink-2);margin:0 0 14px">
+        以下操作會<b>永久刪除</b>對應的全部資料，<b>無法復原</b>。每個動作都會要求你輸入特定文字確認。<br>
+        通常只在「測試完成想清空試打的單」、「重新開帳」這類情境用。
+      </p>
+      <div class="flex" style="flex-wrap:wrap;gap:8px">
+        <button class="btn" type="button" data-clear="batches"  >🗑 清空訂單批次</button>
+        <button class="btn" type="button" data-clear="sales"    >🗑 清空銷貨單</button>
+        <button class="btn" type="button" data-clear="purchases">🗑 清空進貨單</button>
+        <button class="btn" type="button" data-clear="shipments">🗑 清空出貨單</button>
+        <button class="btn" type="button" data-clear="items"    >🗑 清空品項主檔</button>
+        <button class="btn tomato" type="button" id="btnResetAll">🚨 重置交易資料（清空銷/進/出/批 + 品項庫存歸零）</button>
+      </div>
+    </div>
   </div>
 </main>
 
 <script type="module">
-  import { mountShell, toast, isAdmin } from "./js/app-shell.js";
-  import { getLookups, saveLookups } from "./js/data.js";
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { getLookups, saveLookups, getDataStats, clearCollection, resetTransactionsAndStock } from "./js/data.js";
 
   const me = await mountShell({ active: "settings" });
 
@@ -97,6 +123,7 @@
     lookups = await getLookups();
     renderSuppliers();
     renderStaff();
+    bindDataPanel();
   }
 
   function renderList(elId, arr, onRemove) {
@@ -174,6 +201,128 @@
   document.getElementById("newStaff").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); addStaff(); }
   });
+
+  // ============ 系統資料總覽 + 危險區 ============
+  const NAME_ZH = {
+    items: "品項主檔",
+    sales: "銷貨單",
+    purchases: "進貨單",
+    shipments: "出貨單",
+    batches: "訂單批次"
+  };
+  const $statsBlock = document.getElementById("statsBlock");
+
+  async function reloadStats() {
+    $statsBlock.innerHTML = `<div class="muted" style="text-align:center;padding:20px">載入中…</div>`;
+    try {
+      const s = await getDataStats();
+      $statsBlock.innerHTML = `
+        <div class="table-wrap">
+          <table class="tb" style="margin:0">
+            <thead><tr><th>類型</th><th class="num">筆數</th><th>備註</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td>🍎 品項主檔</td>
+                <td class="num"><b>${fmt.num(s.items.count)}</b></td>
+                <td><span class="muted">低庫存 ${s.items.lowStock} · 售完 ${s.items.outOfStock} · 庫存總值 ${fmt.money(s.items.totalStockValue)}</span></td>
+                <td><a href="items.html" class="btn ghost icon-only" title="前往管理">→</a></td>
+              </tr>
+              <tr>
+                <td>🛒 銷貨單</td>
+                <td class="num"><b>${fmt.num(s.sales.count)}</b></td>
+                <td><span class="muted">總額 ${fmt.money(s.sales.total)}</span></td>
+                <td><a href="sales.html" class="btn ghost icon-only" title="前往管理">→</a></td>
+              </tr>
+              <tr>
+                <td>📦 進貨單</td>
+                <td class="num"><b>${fmt.num(s.purchases.count)}</b></td>
+                <td><span class="muted">總額 ${fmt.money(s.purchases.total)}</span></td>
+                <td><a href="purchase.html" class="btn ghost icon-only" title="前往管理">→</a></td>
+              </tr>
+              <tr>
+                <td>🚚 出貨單</td>
+                <td class="num"><b>${fmt.num(s.shipments.count)}</b></td>
+                <td>—</td>
+                <td><a href="shipping.html" class="btn ghost icon-only" title="前往管理">→</a></td>
+              </tr>
+              <tr>
+                <td>📋 訂單批次</td>
+                <td class="num"><b>${fmt.num(s.batches.count)}</b></td>
+                <td><span class="muted">${s.batches.draft} 草稿 / ${s.batches.completed} 已確認</span></td>
+                <td><a href="batches.html" class="btn ghost icon-only" title="前往管理">→</a></td>
+              </tr>
+              <tr>
+                <td>🏪 供應商</td>
+                <td class="num"><b>${(lookups.suppliers||[]).length}</b></td>
+                <td><span class="muted">於上方「🏪 供應商」管理</span></td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>🚚 配送員</td>
+                <td class="num"><b>${(lookups.deliveryStaff||[]).length}</b></td>
+                <td><span class="muted">於上方「🚚 配送員」管理</span></td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (err) {
+      console.error(err);
+      $statsBlock.innerHTML = `<div style="color:var(--tomato);padding:14px">載入失敗：${err.message}</div>`;
+    }
+  }
+
+  function bindDataPanel() {
+    document.getElementById("btnReloadStats").addEventListener("click", reloadStats);
+
+    // 個別 collection 清空
+    document.querySelectorAll("[data-clear]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.clear;
+        const zh = NAME_ZH[name] || name;
+        const word = "DELETE";
+        const input = prompt(`即將永久刪除「${zh}」全部資料，無法復原。\n\n確認請輸入：${word}`);
+        if (input !== word) { toast("已取消（輸入不符）", "err"); return; }
+        btn.disabled = true;
+        try {
+          const n = await clearCollection(name);
+          toast(`✓ 已刪除 ${zh} ${n} 筆`, "ok");
+          await reloadStats();
+        } catch (err) {
+          console.error(err);
+          toast("刪除失敗：" + err.message, "err");
+        }
+        btn.disabled = false;
+      });
+    });
+
+    // 重置交易 + 庫存
+    document.getElementById("btnResetAll").addEventListener("click", async () => {
+      const word = "RESET";
+      const input = prompt(
+        `即將執行：\n` +
+        `① 清空所有銷貨單 / 進貨單 / 出貨單 / 訂單批次\n` +
+        `② 把所有品項的庫存與平均成本歸零（品項本身保留）\n\n` +
+        `這會把交易資料完全清空、像新開帳一樣。無法復原。\n\n` +
+        `確認請輸入：${word}`
+      );
+      if (input !== word) { toast("已取消（輸入不符）", "err"); return; }
+      const $btn = document.getElementById("btnResetAll");
+      $btn.disabled = true;
+      $btn.textContent = "⏳ 重置中…";
+      try {
+        const r = await resetTransactionsAndStock();
+        toast(`✓ 重置完成：銷 ${r.sales} / 進 ${r.purchases} / 出 ${r.shipments} / 批 ${r.batches} / 品項重置 ${r.itemsReset}`, "ok");
+        await reloadStats();
+      } catch (err) {
+        console.error(err);
+        toast("重置失敗：" + err.message, "err");
+      }
+      $btn.disabled = false;
+      $btn.textContent = "🚨 重置交易資料（清空銷/進/出/批 + 品項庫存歸零）";
+    });
+  }
 </script>
 </body>
 </html>
