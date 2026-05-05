@@ -42,7 +42,7 @@ const firebaseConfig = {
 };
 
 // 其他 API（地圖、AI 等）金鑰；自行視需求使用
-export const EXTRA_API_KEY = "AIzaSyC55b4xbZUuRR6Gy1MCWJ_F1F452gaNi_s";
+export const EXTRA_API_KEY = "AIzaSyB2P72cWIbIwA6dQcGe56VvDiEPPbBx1I0";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
