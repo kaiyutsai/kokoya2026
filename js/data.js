@@ -114,6 +114,7 @@ export async function addSale(sale) {
       note: sale.note || "",
       lines: enriched,
       total, cost, profit: total - cost,
+      handlerName: sale.handlerName || me().name,
       createdAt: serverTimestamp(),
       createdBy: me().email,
       createdByName: me().name
@@ -159,6 +160,61 @@ export async function deleteSale(id) {
   });
 }
 
+// 更新銷貨單：reset 舊 line 的庫存效應 + 套用新 line（庫存淨變化）
+export async function updateSale(id, sale) {
+  return await runTransaction(db, async (tx) => {
+    const sRef = doc(db, "sales", id);
+    const sSnap = await tx.get(sRef);
+    if (!sSnap.exists()) throw new Error("找不到銷貨單");
+    const oldData  = sSnap.data();
+    const oldLines = oldData.lines || [];
+    const newLines = sale.lines || [];
+
+    // 涉及到的全部 itemId（舊+新去重）
+    const allIds = [...new Set([...oldLines.map(l=>l.itemId), ...newLines.map(l=>l.itemId)])].filter(Boolean);
+    const itemRefs  = allIds.map(id2 => doc(db, "items", id2));
+    const itemSnaps = await Promise.all(itemRefs.map(r => tx.get(r)));
+    const itemMap = {};
+    allIds.forEach((id2, i) => itemMap[id2] = { ref: itemRefs[i], snap: itemSnaps[i] });
+
+    // 計算每個品項的庫存淨變化（舊銷售要回補，新銷售要扣除）
+    const stockDelta = {};
+    oldLines.forEach(l => { if (l.itemId) stockDelta[l.itemId] = (stockDelta[l.itemId]||0) + Number(l.qty); });
+    newLines.forEach(l => { if (l.itemId) stockDelta[l.itemId] = (stockDelta[l.itemId]||0) - Number(l.qty); });
+
+    // 算新 total / cost / profit
+    let total = 0, cost = 0;
+    const enriched = newLines.map(l => {
+      const itemData = itemMap[l.itemId]?.snap?.exists() ? itemMap[l.itemId].snap.data() : { avgCost: 0 };
+      const lineTotal = Number(l.qty) * Number(l.price);
+      const unitCost  = Number(itemData.avgCost || 0);
+      total += lineTotal;
+      cost  += Number(l.qty) * unitCost;
+      return { ...l, lineTotal, unitCost };
+    });
+
+    // 套用庫存變化
+    Object.entries(stockDelta).forEach(([id2, delta]) => {
+      const m = itemMap[id2];
+      if (m && m.snap.exists()) {
+        const curStock = Number(m.snap.data().stock) || 0;
+        tx.update(m.ref, { stock: curStock + delta });
+      }
+    });
+
+    tx.update(sRef, {
+      date: sale.date instanceof Date ? Timestamp.fromDate(sale.date) : sale.date,
+      customer: sale.customer || "",
+      note: sale.note || "",
+      lines: enriched,
+      total, cost, profit: total - cost,
+      handlerName: sale.handlerName || oldData.handlerName || oldData.createdByName || me().name,
+      updatedAt: serverTimestamp(),
+      updatedBy: me().email
+    });
+  });
+}
+
 // ============ Purchases (進貨) ============
 // 進貨：增加庫存，重新計算加權平均成本
 export async function addPurchase(p) {
@@ -181,6 +237,7 @@ export async function addPurchase(p) {
       note: p.note || "",
       lines: enriched,
       total,
+      handlerName: p.handlerName || me().name,
       createdAt: serverTimestamp(),
       createdBy: me().email,
       createdByName: me().name
@@ -230,6 +287,55 @@ export async function deletePurchase(id) {
       }
     });
     tx.delete(pRef);
+  });
+}
+
+// 更新進貨單：庫存淨變化（avgCost 不重算，留小幅誤差，水果攤可接受）
+export async function updatePurchase(id, p) {
+  return await runTransaction(db, async (tx) => {
+    const pRef = doc(db, "purchases", id);
+    const pSnap = await tx.get(pRef);
+    if (!pSnap.exists()) throw new Error("找不到進貨單");
+    const oldData  = pSnap.data();
+    const oldLines = oldData.lines || [];
+    const newLines = p.lines || [];
+
+    const allIds = [...new Set([...oldLines.map(l=>l.itemId), ...newLines.map(l=>l.itemId)])].filter(Boolean);
+    const itemRefs  = allIds.map(id2 => doc(db, "items", id2));
+    const itemSnaps = await Promise.all(itemRefs.map(r => tx.get(r)));
+    const itemMap = {};
+    allIds.forEach((id2, i) => itemMap[id2] = { ref: itemRefs[i], snap: itemSnaps[i] });
+
+    let total = 0;
+    const enriched = newLines.map(l => {
+      const lineTotal = Number(l.qty) * Number(l.cost);
+      total += lineTotal;
+      return { ...l, lineTotal };
+    });
+
+    // 庫存淨變化：舊進貨要扣回、新進貨要加上
+    const stockDelta = {};
+    oldLines.forEach(l => { if (l.itemId) stockDelta[l.itemId] = (stockDelta[l.itemId]||0) - Number(l.qty); });
+    newLines.forEach(l => { if (l.itemId) stockDelta[l.itemId] = (stockDelta[l.itemId]||0) + Number(l.qty); });
+
+    Object.entries(stockDelta).forEach(([id2, delta]) => {
+      const m = itemMap[id2];
+      if (m && m.snap.exists()) {
+        const curStock = Number(m.snap.data().stock) || 0;
+        tx.update(m.ref, { stock: curStock + delta });
+      }
+    });
+
+    tx.update(pRef, {
+      date: p.date instanceof Date ? Timestamp.fromDate(p.date) : p.date,
+      supplier: p.supplier || "",
+      note: p.note || "",
+      lines: enriched,
+      total,
+      handlerName: p.handlerName || oldData.handlerName || oldData.createdByName || me().name,
+      updatedAt: serverTimestamp(),
+      updatedBy: me().email
+    });
   });
 }
 

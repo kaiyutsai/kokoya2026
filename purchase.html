@@ -20,6 +20,12 @@
       <div class="row-fields">
         <div class="field"><label>進貨日期</label><input type="date" class="input" id="fDate" required></div>
         <div class="field"><label>供應商</label><input class="input" id="fSupplier" list="dlSupplier" placeholder="例：崑山水果（從清單選或手動輸入）"></div>
+        <div class="field"><label>經辦人</label><input class="input" id="fHandler" list="dlHandler" placeholder="預設為登入帳號"></div>
+      </div>
+      <datalist id="dlHandler"></datalist>
+      <div id="editIndicator" class="hidden" style="margin:6px 0 10px;padding:8px 12px;background:#FFF6E6;border-left:3px solid var(--orange);border-radius:0 8px 8px 0;font-size:.9rem">
+        ✏️ 正在編輯：<b id="editSupplier"></b>
+        <button type="button" class="btn ghost" id="btnCancelEdit" style="margin-left:10px;padding:4px 10px;font-size:.78rem">取消編輯</button>
       </div>
 
       <h3 style="margin-top:6px">品項明細</h3>
@@ -34,8 +40,8 @@
       </div>
 
       <div class="flex" style="justify-content:flex-end;margin-top:14px">
-        <button type="reset" class="btn ghost">清空</button>
-        <button type="submit" class="btn leaf">💾 儲存進貨單</button>
+        <button type="reset" class="btn ghost" id="btnReset">清空</button>
+        <button type="submit" class="btn leaf" id="btnSubmit">💾 儲存進貨單</button>
       </div>
     </form>
   </section>
@@ -77,8 +83,9 @@
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
   import {
-    listItems, addPurchase, listPurchases, deletePurchase, getLookups
+    listItems, addPurchase, listPurchases, deletePurchase, updatePurchase, getLookups
   } from "./js/data.js";
+  import { ALLOWED_USERS } from "./js/users.js";
 
   const me = await mountShell({ active: "purchase" });
   const $lines = document.getElementById("lines");
@@ -86,9 +93,15 @@
   const $rows  = document.getElementById("rows");
   const $kw    = document.getElementById("kw");
   document.getElementById("fDate").value = fmt.dateInput(new Date());
+  document.getElementById("fHandler").value = me.name;
+
+  // 帶入家人姓名到「經辦人」datalist
+  document.getElementById("dlHandler").innerHTML =
+    Object.values(ALLOWED_USERS).map(u => `<option value="${u.name}">`).join("");
 
   let items = await listItems();
   let cache = [];
+  let editingId = null;
   let lookups = { suppliers: [], deliveryStaff: [] };
   // 載入供應商清單到 datalist
   getLookups().then(l => {
@@ -257,20 +270,90 @@
     }).filter(l => l.itemId && l.qty > 0);
     if (!lines.length) return toast("請至少加一個品項，且總數量需大於 0", "err");
 
+    const payload = {
+      date: new Date(document.getElementById("fDate").value),
+      supplier: document.getElementById("fSupplier").value,
+      note: document.getElementById("fNote").value,
+      handlerName: document.getElementById("fHandler").value.trim() || me.name,
+      lines
+    };
+
     try {
-      await addPurchase({
-        date: new Date(document.getElementById("fDate").value),
-        supplier: document.getElementById("fSupplier").value,
-        note: document.getElementById("fNote").value,
-        lines
-      });
-      toast("✓ 進貨單已儲存，庫存已加入", "ok");
+      if (editingId) {
+        await updatePurchase(editingId, payload);
+        toast("✓ 進貨單已更新（庫存已調整）", "ok");
+      } else {
+        await addPurchase(payload);
+        toast("✓ 進貨單已儲存，庫存已加入", "ok");
+      }
+      exitEditMode();
       $form.reset();
       document.getElementById("fDate").value = fmt.dateInput(new Date());
+      document.getElementById("fHandler").value = me.name;
       $lines.innerHTML = ""; addLine();
       items = await listItems();
       reload();
-    } catch (err) { console.error(err); toast("儲存失敗：" + err.message, "err"); }
+    } catch (err) { console.error(err); toast((editingId ? "更新" : "儲存") + "失敗：" + err.message, "err"); }
+  });
+
+  // 進入編輯模式
+  function enterEditMode(p) {
+    editingId = p.id;
+    document.getElementById("fDate").value = fmt.dateInput(p.date);
+    document.getElementById("fSupplier").value = p.supplier || "";
+    document.getElementById("fHandler").value = p.handlerName || p.createdByName || me.name;
+    document.getElementById("fNote").value = p.note || "";
+    $lines.innerHTML = "";
+    (p.lines || []).forEach(l => {
+      addLine();
+      const row = $lines.lastElementChild;
+      const sl  = row.querySelector(".sl-item");
+      const slMode = row.querySelector(".sl-mode");
+      sl.value = l.itemId || "";
+      sl.dispatchEvent(new Event("change"));
+      // 設定 mode
+      slMode.value = (l.mode === "bulk") ? "bulk" : "box";
+      slMode.dispatchEvent(new Event("change"));
+      if (l.mode === "box") {
+        row.querySelector(".sl-pq").value = l.packQty ?? "";
+        row.querySelector(".sl-ps").value = l.packSize ?? "";
+        row.querySelector(".sl-pc").value = l.packCost ?? "";
+        row.querySelector(".sl-pq").dispatchEvent(new Event("input"));
+      } else {
+        row.querySelector(".sl-bqty").value = l.qty ?? "";
+        row.querySelector(".sl-bcost").value = l.cost ?? "";
+        row.querySelector(".sl-bqty").dispatchEvent(new Event("input"));
+      }
+    });
+    if (!p.lines?.length) addLine();
+
+    document.getElementById("editIndicator").classList.remove("hidden");
+    document.getElementById("editSupplier").textContent = p.supplier || "(未填供應商)";
+    document.getElementById("btnSubmit").textContent = "💾 更新進貨單";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function exitEditMode() {
+    editingId = null;
+    document.getElementById("editIndicator").classList.add("hidden");
+    document.getElementById("btnSubmit").textContent = "💾 儲存進貨單";
+  }
+
+  document.getElementById("btnCancelEdit").addEventListener("click", () => {
+    exitEditMode();
+    $form.reset();
+    document.getElementById("fDate").value = fmt.dateInput(new Date());
+    document.getElementById("fHandler").value = me.name;
+    $lines.innerHTML = ""; addLine();
+  });
+
+  document.getElementById("btnReset").addEventListener("click", () => {
+    setTimeout(() => {
+      document.getElementById("fDate").value = fmt.dateInput(new Date());
+      document.getElementById("fHandler").value = me.name;
+      $lines.innerHTML = ""; addLine();
+      exitEditMode();
+    }, 10);
   });
 
   async function reload() {
@@ -298,16 +381,31 @@
           return `${l.name}×${l.qty}${l.unit||""}`;
         }).join("、")}</td>
         <td class="num"><b>${fmt.money(p.total)}</b></td>
-        <td>${p.createdByName || "—"}</td>
-        <td class="right">${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${p.id}" title="刪除（會反扣庫存）">🗑</button>` : ""}</td>
+        <td>${p.handlerName || p.createdByName || "—"}</td>
+        <td class="right flex" style="justify-content:flex-end;gap:4px">
+          <button class="btn ghost icon-only" data-edit="${p.id}" title="編輯改單">✎</button>
+          ${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${p.id}" title="刪除（會反扣庫存）">🗑</button>` : ""}
+        </td>
       </tr>`).join("");
   }
   $kw.addEventListener("input", render);
   $rows.addEventListener("click", async e => {
-    const id = e.target.closest("[data-del]")?.dataset.del;
-    if (id && confirm("刪除這筆進貨單？庫存會自動扣除。")) {
-      try { await deletePurchase(id); toast("已刪除", "ok"); items = await listItems(); reload(); }
-      catch (err) { toast(err.message, "err"); }
+    const editId = e.target.closest("[data-edit]")?.dataset.edit;
+    const delId  = e.target.closest("[data-del]")?.dataset.del;
+    if (editId) {
+      const p = cache.find(x => x.id === editId);
+      if (p) enterEditMode(p);
+      else toast("找不到該筆進貨單", "err");
+      return;
+    }
+    if (delId && confirm("刪除這筆進貨單？庫存會自動扣除。")) {
+      try {
+        await deletePurchase(delId);
+        toast("已刪除", "ok");
+        if (editingId === delId) exitEditMode();
+        items = await listItems();
+        reload();
+      } catch (err) { toast(err.message, "err"); }
     }
   });
 

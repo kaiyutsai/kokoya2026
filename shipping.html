@@ -9,6 +9,61 @@
 <link rel="stylesheet" href="css/style.css">
 <!-- html2canvas：用於把出貨單畫面轉成 JPG 下載 -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<!-- QRCode.js：在出貨單上印 FB 社團 QR -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  /* ===== 列印（PDF 另存）排版 ===== */
+  @media print {
+    @page { size: A4 portrait; margin: 6mm; }
+    body { background: #fff !important; }
+    .topbar, .no-print, .toast-area, body > main, .hidden { display: none !important; }
+    .container { padding: 0 !important; }
+    .ship-doc {
+      box-shadow: none !important;
+      border: 1px solid #ddd !important;
+      max-width: none !important;
+      page-break-inside: avoid;
+    }
+    /* 多張一頁兩張模式 */
+    #bulkPrintArea .ship-doc {
+      height: calc((297mm - 18mm) / 2);
+      padding: 10mm 12mm !important;
+      margin: 0 0 6mm 0 !important;
+      font-size: 9.5pt;
+      overflow: hidden;
+    }
+    #bulkPrintArea .ship-doc:nth-of-type(2n) {
+      page-break-after: always;
+      margin-bottom: 0 !important;
+    }
+    #bulkPrintArea .ship-doc .head .title { font-size: 1.5rem !important; }
+    #bulkPrintArea .ship-doc .head img { height: 60px !important; }
+    #bulkPrintArea .ship-doc .watermark { width: 60% !important; }
+    #bulkPrintArea .ship-doc table th,
+    #bulkPrintArea .ship-doc table td { padding: 4px 6px !important; font-size: 9pt !important; }
+    #bulkPrintArea .ship-doc .thanks { margin-top: 10px !important; padding: 10px 8px 4px !important; }
+    #bulkPrintArea .ship-doc .thanks .msg { font-size: 1rem !important; }
+    #bulkPrintArea .ship-doc .qr-wrap img.qr { width: 60px !important; height: 60px !important; }
+  }
+  /* QR + 感謝區雙欄 */
+  .ship-doc .thanks-footer {
+    display: flex; align-items: center; gap: 14px;
+    justify-content: center; margin-top: 14px;
+  }
+  .ship-doc .qr-wrap { text-align: center; flex-shrink: 0; }
+  .ship-doc .qr-wrap img.qr {
+    width: 88px; height: 88px;
+    border: 1px solid var(--line);
+    padding: 3px; background: #fff;
+    border-radius: 6px;
+    display: block;
+  }
+  .ship-doc .qr-wrap .qr-label {
+    font-size: .72rem; color: var(--ink-3);
+    margin-top: 4px; letter-spacing: .05em;
+  }
+  .ship-doc .qr-wrap .qr-label b { color: var(--tomato); }
+</style>
 </head>
 <body>
 <main class="container no-print">
@@ -48,10 +103,17 @@
       <div class="card-h"><h2>📒 近 60 天出貨單</h2>
         <input class="input" id="kw" placeholder="🔍 搜尋收貨人/單號" style="width:200px">
       </div>
+      <div class="flex" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <span class="muted" id="selCount">勾選 0 張</span>
+        <button class="btn primary" id="btnBulkPdf" disabled style="margin-left:auto">📄 下載 PDF (一頁兩張)</button>
+      </div>
       <div class="table-wrap">
         <table class="tb">
-          <thead><tr><th>單號</th><th>日期</th><th>收貨人</th><th class="num">金額</th><th></th></tr></thead>
-          <tbody id="rows"><tr><td colspan="5" class="empty">載入中…</td></tr></tbody>
+          <thead><tr>
+            <th style="width:34px"><input type="checkbox" id="checkAll" title="全選"></th>
+            <th>單號</th><th>日期</th><th>收貨人</th><th class="num">金額</th><th></th>
+          </tr></thead>
+          <tbody id="rows"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -60,13 +122,30 @@
 
 <!-- 列印預覽區 -->
 <section id="printArea" class="container hidden" style="padding-top:30px">
-  <div class="no-print flex" style="justify-content:flex-end;margin-bottom:14px;gap:8px;flex-wrap:wrap">
-    <button class="btn ghost" id="btnBack">← 返回</button>
-    <button class="btn ghost" id="btnDownloadJpg">📷 下載圖片 (JPG)</button>
-    <button class="btn ghost" id="btnDownloadDoc">📥 下載 Word (.doc)</button>
-    <button class="btn primary" id="btnPrint">🖨 列印 / 另存 PDF</button>
+  <div class="no-print flex" style="justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+    <label class="flex" style="gap:6px;font-size:.92rem;cursor:pointer">
+      <input type="checkbox" id="toggleNote" style="width:auto"> 顯示備註
+    </label>
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" id="btnBack">← 返回</button>
+      <button class="btn ghost" id="btnDownloadJpg">📷 下載圖片 (JPG)</button>
+      <button class="btn ghost" id="btnDownloadDoc">📥 下載 Word (.doc)</button>
+      <button class="btn primary" id="btnPrint">🖨 列印 / 另存 PDF</button>
+    </div>
   </div>
-  <div class="ship-doc" id="doc"></div>
+  <div id="doc"></div>
+</section>
+
+<!-- 多張一次列印區（A4 一頁兩張） -->
+<section id="bulkPrintArea" class="container hidden" style="padding-top:30px">
+  <div class="no-print flex" style="justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+    <span class="muted" id="bulkInfo">共 0 張 · A4 一頁兩張</span>
+    <div class="flex" style="gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" id="btnBulkBack">← 返回</button>
+      <button class="btn primary" id="btnBulkPrint">🖨 列印 / 另存 PDF</button>
+    </div>
+  </div>
+  <div id="bulkDocs"></div>
 </section>
 
 <script type="module">
@@ -170,10 +249,13 @@
     let list = cache;
     if (kw) list = list.filter(s => (s.recipient||"").includes(kw) || (s.docNo||"").includes(kw));
     if (!list.length) {
-      $rows.innerHTML = `<tr><td colspan="5" class="empty">尚無紀錄</td></tr>`; return;
+      $rows.innerHTML = `<tr><td colspan="6" class="empty">尚無紀錄</td></tr>`;
+      updateSelCount();
+      return;
     }
     $rows.innerHTML = list.map(s => `
       <tr>
+        <td><input type="checkbox" data-sel="${s.id}"></td>
         <td><b>${s.docNo}</b></td>
         <td>${fmt.date(s.date)}</td>
         <td>${s.recipient || "—"}</td>
@@ -183,7 +265,21 @@
           ${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${s.id}" title="刪除">🗑</button>` : ""}
         </td>
       </tr>`).join("");
+    updateSelCount();
   }
+
+  function updateSelCount() {
+    const n = document.querySelectorAll("[data-sel]:checked").length;
+    document.getElementById("selCount").textContent = `勾選 ${n} 張`;
+    document.getElementById("btnBulkPdf").disabled = (n === 0);
+  }
+  document.getElementById("checkAll").addEventListener("change", e => {
+    document.querySelectorAll("[data-sel]").forEach(cb => cb.checked = e.target.checked);
+    updateSelCount();
+  });
+  $rows.addEventListener("change", e => {
+    if (e.target.matches("[data-sel]")) updateSelCount();
+  });
   $kw.addEventListener("input", render);
   $rows.addEventListener("click", async (e) => {
     const view = e.target.closest("[data-view]")?.dataset.view;
@@ -208,7 +304,8 @@
   document.getElementById("btnDownloadJpg").addEventListener("click", async () => {
     if (!currentShipment) return;
     if (typeof html2canvas !== "function") { toast("html2canvas 未載入，請檢查網路", "err"); return; }
-    const $doc = document.getElementById("doc");
+    const $doc = document.querySelector("#doc .ship-doc");
+    if (!$doc) { toast("找不到出貨單元素", "err"); return; }
     const $btn = document.getElementById("btnDownloadJpg");
     $btn.disabled = true;
     $btn.textContent = "⏳ 產生中…";
@@ -232,7 +329,8 @@
   // 下載 Word（.doc）— 用 HTML+Word MIME 的 trick，Word 開啟後可另存為 .docx
   document.getElementById("btnDownloadDoc").addEventListener("click", () => {
     if (!currentShipment) return;
-    const $doc = document.getElementById("doc");
+    const $doc = document.querySelector("#doc .ship-doc");
+    if (!$doc) { toast("找不到出貨單元素", "err"); return; }
     // 拿掉 img（Word 解不到相對路徑，移除避免破圖框）
     let docHTML = $doc.outerHTML.replace(/<img[^>]*>/g, "");
     const wordHTML = `<!DOCTYPE html>
@@ -276,11 +374,18 @@ ${docHTML}
     toast("✓ Word 檔已下載", "ok");
   });
 
-  async function previewDoc(id) {
-    const s = await getShipment(id);
-    if (!s) return toast("找不到此出貨單", "err");
-    currentShipment = s;
-    const linesHtml = (s.lines||[]).map((l,i)=>`
+  // 預先產生 QR Code（FB 社團）為 base64，後續所有出貨單共用
+  const FB_GROUP_URL = "https://www.facebook.com/share/g/14cSCPrgFQJ/";
+  let fbQrDataUrl = "";
+  if (typeof QRCode !== "undefined") {
+    try {
+      fbQrDataUrl = await QRCode.toDataURL(FB_GROUP_URL, { width: 200, margin: 1, color: { dark: "#4A3325", light: "#ffffff" } });
+    } catch (e) { console.warn("QR 產生失敗", e); }
+  }
+
+  // 共用：把 shipment 物件轉成出貨單 HTML（給單張預覽 + 多張列印共用）
+  function renderShipDocHtml(s, includeNote) {
+    const linesHtml = (s.lines || []).map((l, i) => `
       <tr>
         <td>${i+1}</td>
         <td>${l.name}</td>
@@ -291,53 +396,107 @@ ${docHTML}
       </tr>`).join("");
     const hasPhone   = s.phone && s.phone.trim();
     const hasAddress = s.address && s.address.trim();
-    document.getElementById("doc").innerHTML = `
-      <img class="watermark" src="assets/logo.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" alt="">
+    const showNote   = includeNote && s.note;
+    const qrHtml = fbQrDataUrl
+      ? `<div class="qr-wrap"><img class="qr" src="${fbQrDataUrl}" alt="FB 社團"><div class="qr-label">掃 QR 加入<br><b>果果家 FB 社團</b></div></div>`
+      : "";
+    return `
+      <div class="ship-doc">
+        <img class="watermark" src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" alt="">
 
-      <div class="head">
-        <div>
-          <div class="title">出 貨 單</div>
-          <div class="sub">SHIPPING NOTE</div>
+        <div class="head">
+          <div>
+            <div class="title">出 貨 單</div>
+            <div class="sub">SHIPPING NOTE</div>
+          </div>
+          <div style="text-align:right">
+            <img src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:90px" alt="果果家 KOKOYA">
+          </div>
         </div>
-        <div style="text-align:right">
-          <div style="font-family:'Noto Serif TC',serif;font-size:1.4rem;font-weight:700;color:var(--ink-2);letter-spacing:.15em">果果家</div>
-          <div style="color:var(--ink-3);letter-spacing:.2em;font-size:.85rem">KOKOYA</div>
-          <img src="assets/logo.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:60px;margin-top:6px" alt="">
+
+        <div class="meta">
+          <div><div class="lbl">單號</div><div class="val">${s.docNo}</div></div>
+          <div><div class="lbl">出貨日期</div><div class="val">${fmt.date(s.date)}</div></div>
+          <div><div class="lbl">收貨人</div><div class="val">${s.recipient||"—"}</div></div>
+          ${hasPhone ? `<div><div class="lbl">聯絡電話</div><div class="val">${s.phone}</div></div>` : ""}
+          ${hasAddress ? `<div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address}</div></div>` : ""}
         </div>
-      </div>
 
-      <div class="meta">
-        <div><div class="lbl">單號</div><div class="val">${s.docNo}</div></div>
-        <div><div class="lbl">出貨日期</div><div class="val">${fmt.date(s.date)}</div></div>
-        <div><div class="lbl">收貨人</div><div class="val">${s.recipient||"—"}</div></div>
-        ${hasPhone ? `<div><div class="lbl">聯絡電話</div><div class="val">${s.phone}</div></div>` : ""}
-        ${hasAddress ? `<div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address}</div></div>` : ""}
-      </div>
+        <table>
+          <thead>
+            <tr><th style="width:40px">#</th><th>品項</th><th class="num" style="width:80px">數量</th><th style="width:60px">單位</th><th class="num" style="width:90px">單價</th><th class="num" style="width:110px">小計</th></tr>
+          </thead>
+          <tbody>${linesHtml}</tbody>
+        </table>
 
-      <table>
-        <thead>
-          <tr><th style="width:40px">#</th><th>品項</th><th class="num" style="width:80px">數量</th><th style="width:60px">單位</th><th class="num" style="width:90px">單價</th><th class="num" style="width:110px">小計</th></tr>
-        </thead>
-        <tbody>${linesHtml}</tbody>
-      </table>
+        <div class="totals">
+          <div class="row">合計品項：${(s.lines||[]).length} 項　共 ${fmt.num((s.lines||[]).reduce((a,b)=>a+Number(b.qty),0))} 件</div>
+          <div class="grand">總計　${fmt.money(s.total)}</div>
+        </div>
 
-      <div class="totals">
-        <div class="row">合計品項：${(s.lines||[]).length} 項　共 ${fmt.num((s.lines||[]).reduce((a,b)=>a+Number(b.qty),0))} 件</div>
-        <div class="grand">總計　${fmt.money(s.total)}</div>
-      </div>
+        ${showNote ? `<div class="doc-note" style="margin-top:18px;padding:10px 14px;border-left:3px solid var(--orange);background:var(--paper-2);border-radius:0 8px 8px 0;font-size:.92rem">備註：${s.note}</div>` : ""}
 
-      ${s.note ? `<div style="margin-top:18px;padding:10px 14px;border-left:3px solid var(--orange);background:var(--paper-2);border-radius:0 8px 8px 0;font-size:.92rem">備註：${s.note}</div>` : ""}
+        <div class="thanks">
+          <div class="msg">🍎 感謝您的購買 ❤️ 果果家 KOKOYA 感謝您 🍎</div>
+          <div class="sub">新鮮直送 · 用心挑選 · 期待再次相遇</div>
+          <div class="thanks-footer">
+            ${qrHtml}
+            <div class="handler" style="margin:0">出貨日期：${fmt.date(s.date)}</div>
+          </div>
+        </div>
+      </div>`;
+  }
 
-      <div class="thanks">
-        <div class="msg">🍎 感謝您的購買 ❤️ 果果家 KOKOYA 感謝您 🍎</div>
-        <div class="sub">新鮮直送 · 用心挑選 · 期待再次相遇</div>
-        <div class="handler">出貨日期：${fmt.date(s.date)}</div>
-      </div>
-    `;
+  async function previewDoc(id) {
+    const s = await getShipment(id);
+    if (!s) return toast("找不到此出貨單", "err");
+    currentShipment = s;
+    const includeNote = document.getElementById("toggleNote").checked;
+    document.getElementById("doc").innerHTML = renderShipDocHtml(s, includeNote);
     $form.classList.add("hidden");
     $print.classList.remove("hidden");
     window.scrollTo(0, 0);
   }
+
+  // 備註勾選切換 → 重畫
+  document.getElementById("toggleNote").addEventListener("change", () => {
+    if (currentShipment) {
+      const includeNote = document.getElementById("toggleNote").checked;
+      document.getElementById("doc").innerHTML = renderShipDocHtml(currentShipment, includeNote);
+    }
+  });
+
+  // ----- 多張一次列印 (A4 一頁兩張) -----
+  const $bulk = document.getElementById("bulkPrintArea");
+  document.getElementById("btnBulkPdf").addEventListener("click", async () => {
+    const ids = [...document.querySelectorAll("[data-sel]:checked")].map(c => c.dataset.sel);
+    if (!ids.length) return toast("請先勾選要下載的出貨單", "err");
+    const $btn = document.getElementById("btnBulkPdf");
+    $btn.disabled = true;
+    $btn.textContent = "⏳ 載入中…";
+    try {
+      const ships = await Promise.all(ids.map(id => getShipment(id)));
+      const valid = ships.filter(Boolean);
+      // 多張列印一律不顯示備註（保持簡潔）
+      document.getElementById("bulkDocs").innerHTML = valid.map(s => renderShipDocHtml(s, false)).join("");
+      document.getElementById("bulkInfo").textContent = `共 ${valid.length} 張 · A4 一頁兩張，按列印後在「目的地」選「另存為 PDF」`;
+      $form.classList.add("hidden");
+      $print.classList.add("hidden");
+      $bulk.classList.remove("hidden");
+      window.scrollTo(0, 0);
+    } catch (err) {
+      console.error(err);
+      toast("載入失敗：" + err.message, "err");
+    }
+    $btn.disabled = (document.querySelectorAll("[data-sel]:checked").length === 0);
+    $btn.textContent = "📄 下載 PDF (一頁兩張)";
+  });
+
+  document.getElementById("btnBulkBack").addEventListener("click", () => {
+    $bulk.classList.add("hidden");
+    $form.classList.remove("hidden");
+  });
+  document.getElementById("btnBulkPrint").addEventListener("click", () => window.print());
 
   reload();
 </script>
