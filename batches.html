@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>訂單批次 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* 批次卡片 */
+  .batch-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+  .batch-card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 16px; cursor: pointer; transition: all .15s; position: relative;
+  }
+  .batch-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--orange); }
+  .batch-card .head {
+    display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;
+  }
+  .batch-card .name { font-weight: 700; color: var(--ink-2); font-size: 1.05rem; }
+  .batch-card .date { font-size: .82rem; color: var(--ink-3); margin-top: 2px; }
+  .batch-card .body { display: flex; gap: 18px; margin-top: 8px; }
+  .batch-card .stat-mini { font-size: .85rem; color: var(--ink-3); }
+  .batch-card .stat-mini b { display: block; font-size: 1.2rem; color: var(--ink); }
+  .batch-card .amount { color: var(--tomato); font-weight: 700; font-size: 1.1rem; margin-top: 8px; }
+  .batch-card .status { position: absolute; top: 12px; right: 12px; }
+
+  /* 客戶訂單卡 */
+  .order-card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 12px 14px; margin-bottom: 10px;
+    display: grid; gap: 6px;
+  }
+  .order-card .top {
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .order-card .cust { font-weight: 600; color: var(--ink-2); }
+  .order-card .lines-mini {
+    color: var(--ink-3); font-size: .88rem; line-height: 1.5;
+  }
+  .order-card .meta {
+    display: flex; gap: 12px; align-items: center; font-size: .82rem; color: var(--ink-3);
+  }
+  .order-card .amount-line { font-weight: 700; color: var(--tomato); }
+  .order-card.done { background: #F4F8EC; border-color: #C9D7B6; }
+
+  /* SKU 表格 */
+  table.sku tbody tr.lack td { color: var(--tomato); font-weight: 600; }
+  table.sku tbody tr.enough td { color: var(--leaf-deep); }
+
+  /* 狀態 tag */
+  .tag.draft     { background: #F2EADB; color: var(--ink-3); }
+  .tag.done      { background: #DCEAD0; color: var(--leaf-deep); }
+  .tag.partial   { background: #FBE9C8; color: #B07418; }
+
+  /* Modal 寬一點 */
+  .modal.wide { width: min(720px, 95vw); }
+
+  /* 批次行內品項列 */
+  .ol-row {
+    display: grid; gap: 8px; align-items: end;
+    grid-template-columns: minmax(140px, 2fr) 70px 90px 80px 30px;
+    margin-bottom: 6px;
+  }
+  @media (max-width: 600px) {
+    .ol-row { grid-template-columns: 1fr 1fr 1fr 1fr 30px; }
+  }
+</style>
+</head>
+<body>
+<main class="container">
+  <!-- ===== VIEW: 批次清單 ===== -->
+  <section id="viewList">
+    <div class="card">
+      <div class="card-h">
+        <h2>📋 訂單批次</h2>
+        <div class="flex">
+          <input class="input" id="kw" placeholder="🔍 搜尋名稱/配送員" style="width:200px">
+          <button class="btn primary" id="btnNew">＋ 新建批次</button>
+        </div>
+      </div>
+      <p class="muted" style="font-size:.92rem;line-height:1.7;margin:0 0 14px">
+        📌 把「同一車要送的多個客戶訂單」匯成一個批次，可即時看到 SKU 總需求、與庫存比對，<b>一鍵把整批轉成銷貨單 + 出貨單</b>。
+      </p>
+      <div id="batchGrid" class="batch-grid">
+        <div class="muted" style="grid-column:1/-1;text-align:center;padding:40px">載入中…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== VIEW: 批次明細 ===== -->
+  <section id="viewDetail" class="hidden">
+    <div class="flex" style="justify-content:space-between;margin-bottom:14px">
+      <button class="btn ghost" id="btnBack">← 返回批次清單</button>
+      <span id="dStatus"></span>
+    </div>
+
+    <!-- 批次主檔 -->
+    <div class="card">
+      <div class="card-h"><h2 id="dTitle">批次明細</h2></div>
+      <div class="row-fields">
+        <div class="field"><label>批次名稱 *</label><input class="input" id="bName" placeholder="例：5/6 姸慧送" required></div>
+        <div class="field"><label>配送日期 *</label><input class="input" id="bDate" type="date" required></div>
+        <div class="field"><label>配送員</label><input class="input" id="bStaff" list="dlStaff" placeholder="例：姸慧"></div>
+      </div>
+      <datalist id="dlStaff"></datalist>
+      <div class="field"><label>批次備註</label><textarea class="textarea" id="bNote" rows="2" placeholder="例：高雄線、需冷藏配送…"></textarea></div>
+      <div class="flex" style="justify-content:flex-end">
+        <button class="btn ghost" id="btnSaveBatch">💾 儲存批次資料</button>
+      </div>
+    </div>
+
+    <!-- 客戶訂單 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h">
+        <h2>👥 客戶訂單 <span class="muted" id="metaCount" style="font-size:.85rem;font-weight:normal">0 筆</span></h2>
+        <div class="flex">
+          <button class="btn ghost" id="btnAiParse" title="貼上 LINE 訊息，AI 自動拆成多筆">🤖 AI 解析貼上</button>
+          <button class="btn primary" id="btnAddOrder">＋ 加客戶訂單</button>
+        </div>
+      </div>
+      <div id="orderList">
+        <div class="muted" style="text-align:center;padding:30px">尚未加入任何客戶訂單，點右上「＋ 加客戶訂單」開始</div>
+      </div>
+    </div>
+
+    <!-- SKU 匯總 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h">
+        <h2>📊 SKU 匯總（叫貨依據）</h2>
+        <span class="muted" style="font-size:.85rem">總需求 vs 現有庫存</span>
+      </div>
+      <div class="table-wrap">
+        <table class="tb sku" id="skuTable">
+          <thead>
+            <tr>
+              <th>品項</th>
+              <th class="num">總需求</th>
+              <th class="num">現有庫存</th>
+              <th class="num">差額</th>
+              <th>叫貨建議</th>
+            </tr>
+          </thead>
+          <tbody id="skuRows">
+            <tr><td colspan="5" class="empty">沒有品項，加客戶訂單後會自動匯總</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex" style="justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)">
+        <div class="muted">合計</div>
+        <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="metaAmount">$0</div>
+      </div>
+    </div>
+
+    <!-- 動作 -->
+    <div class="card" style="margin-top:14px">
+      <div id="confirmHint" class="muted" style="font-size:.9rem;margin-bottom:12px;line-height:1.7"></div>
+      <div class="flex" style="justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <button class="btn tomato" id="btnDeleteBatch" style="display:none">🗑 刪除整個批次</button>
+        <div style="margin-left:auto" class="flex">
+          <button class="btn primary" id="btnConfirm">✅ 確認出貨（建立銷貨單 + 出貨單）</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===== Modal: AI 解析貼上 ===== -->
+<div class="modal-mask" id="aiModal">
+  <div class="modal wide" style="max-width:760px">
+    <div class="card-h">
+      <h2>🤖 AI 解析訂單</h2>
+      <button class="btn ghost icon-only" id="btnAiClose" title="關閉">✕</button>
+    </div>
+    <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 12px">
+      把 LINE 上整批訂單訊息貼進來，AI 自動拆成多筆客戶訂單，你勾選需要的加入批次即可。
+    </p>
+    <textarea class="textarea" id="aiInput" rows="10" placeholder="例：
+1.吳慧儀：紅色奇異果兩盒 300元
+2.蔡佳蓉：5/6姸慧送
+紅色奇異果2盒300元
+紐西蘭蘋果4顆100元
+3.邱沛緹：紅色奇異果1盒150元
+紐西蘭蘋果4顆100元..."></textarea>
+
+    <div class="flex" style="justify-content:flex-end;margin-top:12px">
+      <button type="button" class="btn primary" id="btnAiRun">🚀 開始解析</button>
+    </div>
+
+    <div id="aiResult" class="hidden" style="margin-top:18px;border-top:1px dashed var(--line);padding-top:14px">
+      <div class="card-h" style="margin-bottom:10px">
+        <h3 style="margin:0">解析結果</h3>
+        <div class="flex" style="gap:6px">
+          <button type="button" class="btn ghost" id="btnAiSelectAll">全勾</button>
+          <button type="button" class="btn ghost" id="btnAiSelectNone">全不勾</button>
+        </div>
+      </div>
+      <div id="aiWarnings" class="hidden"></div>
+      <div id="aiOrderList" style="max-height:400px;overflow-y:auto;padding-right:6px"></div>
+      <div class="flex" style="justify-content:flex-end;margin-top:14px">
+        <button type="button" class="btn ghost" id="btnAiCancel">取消</button>
+        <button type="button" class="btn primary" id="btnAiAdd">✅ 把勾選的加入批次</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal: 編輯客戶訂單 ===== -->
+<div class="modal-mask" id="orderModal">
+  <div class="modal wide">
+    <div class="card-h"><h2 id="omTitle">新增客戶訂單</h2></div>
+    <form id="orderForm">
+      <input type="hidden" id="oId">
+      <div class="row-fields">
+        <div class="field"><label>客戶名稱 *</label><input class="input" id="oCustomer" required placeholder="例：蔡佳蓉"></div>
+        <div class="field"><label>聯絡電話</label><input class="input" id="oPhone" placeholder="0912-345-678"></div>
+      </div>
+      <div class="field">
+        <label>收貨地址 <span class="muted" style="font-weight:normal">（留空 = 只建銷貨單，不建出貨單）</span></label>
+        <input class="input" id="oAddr" placeholder="例：高雄市鳳山區中山路 100 號">
+      </div>
+      <div class="row-fields">
+        <div class="field">
+          <label>付款方式</label>
+          <select class="select" id="oPay">
+            <option value="">未指定</option>
+            <option value="cash">現金</option>
+            <option value="transfer">匯款</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div class="field" style="display:flex;align-items:center;gap:8px">
+          <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="oPaid" style="width:auto"> 已收款
+          </label>
+        </div>
+      </div>
+
+      <h3 style="margin-top:14px">品項明細</h3>
+      <div style="background:var(--paper-2);padding:8px 10px;border-radius:8px;font-size:.78rem;color:var(--ink-3);margin-bottom:10px">
+        品項 / 數量 / 單價 / 小計
+      </div>
+      <div id="oLines"></div>
+      <button type="button" class="btn ghost" id="btnAddLineModal">＋ 新增一行品項</button>
+
+      <div class="field" style="margin-top:14px"><label>客戶備註</label><textarea class="textarea" id="oNote" rows="2" placeholder="例：放警衛室、輕拿輕放、要包裝紙袋…"></textarea></div>
+
+      <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
+        <div class="muted">小計</div>
+        <div style="font-size:1.2rem;font-weight:700;color:var(--tomato)" id="oTotal">$0</div>
+      </div>
+
+      <div class="flex" style="justify-content:flex-end;margin-top:14px">
+        <button type="button" class="btn ghost" id="btnCancelOrder">取消</button>
+        <button type="submit" class="btn primary">儲存訂單</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import {
+    listItems, listBatches, getBatch, addBatch, updateBatch, deleteBatch,
+    confirmBatch, aggregateBatch, getLookups, buildItemTierOptions
+  } from "./js/data.js";
+  import { parseOrders } from "./js/ai-parse.js";
+
+  const me = await mountShell({ active: "batches" });
+
+  let items = [];
+  let batches = [];
+  let lookups = { suppliers: [], deliveryStaff: [] };
+  let currentBatch = null;     // 編輯中的批次（含未存暫態）
+  let currentBatchId = null;   // null = 新批次
+
+  // ----- DOM 快取 -----
+  const $viewList   = document.getElementById("viewList");
+  const $viewDetail = document.getElementById("viewDetail");
+  const $batchGrid  = document.getElementById("batchGrid");
+  const $kw         = document.getElementById("kw");
+  const $orderList  = document.getElementById("orderList");
+  const $skuRows    = document.getElementById("skuRows");
+  const $orderModal = document.getElementById("orderModal");
+  const $oLines     = document.getElementById("oLines");
+
+  // ----- 工具 -----
+  function showList() { $viewList.classList.remove("hidden"); $viewDetail.classList.add("hidden"); window.scrollTo(0,0); }
+  function showDetail() { $viewList.classList.add("hidden"); $viewDetail.classList.remove("hidden"); window.scrollTo(0,0); }
+  function genId() { return "ord_" + Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+  // ============ 載入資料 ============
+  async function bootstrap() {
+    [items, batches, lookups] = await Promise.all([
+      listItems(),
+      listBatches({ days: 90 }),
+      getLookups().catch(() => ({ suppliers: [], deliveryStaff: [] }))
+    ]);
+    populateDatalists();
+    renderBatchList();
+  }
+
+  function populateDatalists() {
+    const dl = document.getElementById("dlStaff");
+    dl.innerHTML = (lookups.deliveryStaff || []).map(s => `<option value="${s}">`).join("");
+  }
+
+  // ============ 批次清單 view ============
+  function renderBatchList() {
+    const kw = $kw.value.trim();
+    let list = batches;
+    if (kw) list = list.filter(b => (b.name||"").includes(kw) || (b.deliveryStaff||"").includes(kw));
+    if (!list.length) {
+      $batchGrid.innerHTML = `<div class="muted" style="grid-column:1/-1;text-align:center;padding:40px">尚未建立任何批次。<br>點右上「＋ 新建批次」開始第一張。</div>`;
+      return;
+    }
+    $batchGrid.innerHTML = list.map(b => {
+      const orderCount = (b.orders || []).length;
+      const status = b.status === "completed" ? `<span class="tag done">已確認</span>` : `<span class="tag draft">草稿</span>`;
+      return `
+        <div class="batch-card" data-id="${b.id}">
+          <div class="status">${status}</div>
+          <div class="head">
+            <div>
+              <div class="name">${b.name || "(未命名)"}</div>
+              <div class="date">${fmt.date(b.deliveryDate)}${b.deliveryStaff ? ` · 配送員：${b.deliveryStaff}` : ""}</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="stat-mini"><b>${orderCount}</b>客戶</div>
+            <div class="stat-mini"><b>${(b.orders||[]).reduce((s,o)=>s+(o.lines||[]).length,0)}</b>品項列</div>
+          </div>
+          <div class="amount">${fmt.money(b.totalAmount || 0)}</div>
+        </div>`;
+    }).join("");
+  }
+
+  $kw.addEventListener("input", renderBatchList);
+  $batchGrid.addEventListener("click", e => {
+    const id = e.target.closest("[data-id]")?.dataset.id;
+    if (id) openBatch(id);
+  });
+
+  // ============ 新建/開啟批次 ============
+  document.getElementById("btnNew").addEventListener("click", () => {
+    currentBatchId = null;
+    currentBatch = {
+      name: "",
+      deliveryDate: new Date(),
+      deliveryStaff: "",
+      status: "draft",
+      notes: "",
+      orders: [],
+      totalAmount: 0
+    };
+    populateDetail();
+    showDetail();
+  });
+
+  async function openBatch(id) {
+    const b = await getBatch(id);
+    if (!b) return toast("找不到此批次", "err");
+    currentBatchId = id;
+    currentBatch = b;
+    populateDetail();
+    showDetail();
+  }
+
+  function populateDetail() {
+    document.getElementById("bName").value  = currentBatch.name || "";
+    document.getElementById("bDate").value  = fmt.dateInput(currentBatch.deliveryDate || new Date());
+    document.getElementById("bStaff").value = currentBatch.deliveryStaff || "";
+    document.getElementById("bNote").value  = currentBatch.notes || "";
+
+    const isCompleted = currentBatch.status === "completed";
+    document.getElementById("dTitle").textContent = isCompleted ? "📋 批次明細（已確認）" : "📋 批次明細";
+    document.getElementById("dStatus").innerHTML = isCompleted ? `<span class="tag done">已確認出貨</span>` : `<span class="tag draft">草稿</span>`;
+
+    // admin 才顯示刪除
+    document.getElementById("btnDeleteBatch").style.display = (currentBatchId && isAdmin(me.email)) ? "inline-flex" : "none";
+
+    renderOrders();
+    renderSku();
+  }
+
+  document.getElementById("btnBack").addEventListener("click", async () => {
+    showList();
+    batches = await listBatches({ days: 90 });
+    renderBatchList();
+  });
+
+  // ----- 儲存批次主檔資料（不含 order 變更已在加減 order 時即時 setBatch） -----
+  async function persistBatch() {
+    currentBatch.name = document.getElementById("bName").value.trim();
+    const dStr = document.getElementById("bDate").value;
+    if (!currentBatch.name || !dStr) {
+      toast("批次名稱、配送日期為必填", "err");
+      return null;
+    }
+    currentBatch.deliveryDate = new Date(dStr);
+    currentBatch.deliveryStaff = document.getElementById("bStaff").value.trim();
+    currentBatch.notes = document.getElementById("bNote").value;
+
+    try {
+      if (currentBatchId) {
+        await updateBatch(currentBatchId, currentBatch);
+      } else {
+        currentBatchId = await addBatch(currentBatch);
+      }
+      return currentBatchId;
+    } catch (err) {
+      console.error(err);
+      toast("儲存失敗：" + err.message, "err");
+      return null;
+    }
+  }
+
+  document.getElementById("btnSaveBatch").addEventListener("click", async () => {
+    const id = await persistBatch();
+    if (id) toast("✓ 批次已儲存", "ok");
+  });
+
+  // ----- 刪除批次 -----
+  document.getElementById("btnDeleteBatch").addEventListener("click", async () => {
+    if (!currentBatchId) return;
+    if (!confirm(`確定刪除批次「${currentBatch.name}」？\n注意：已建立的銷貨單/出貨單不會自動刪，需自行去對應頁面刪除。`)) return;
+    try {
+      await deleteBatch(currentBatchId);
+      toast("已刪除", "ok");
+      currentBatchId = null;
+      currentBatch = null;
+      batches = await listBatches({ days: 90 });
+      renderBatchList();
+      showList();
+    } catch (err) { toast(err.message, "err"); }
+  });
+
+  // ============ Order list 渲染 ============
+  function renderOrders() {
+    const orders = currentBatch.orders || [];
+    document.getElementById("metaCount").textContent = `${orders.length} 筆`;
+    if (!orders.length) {
+      $orderList.innerHTML = `<div class="muted" style="text-align:center;padding:30px">尚未加入任何客戶訂單，點右上「＋ 加客戶訂單」開始</div>`;
+      return;
+    }
+    $orderList.innerHTML = orders.map(o => {
+      const linesText = (o.lines||[]).map(l => `${l.name || "?"} × ${fmt.num(l.qty)}${l.unit||""}`).join("、") || "(無品項)";
+      const isDone = !!o.saleId;
+      const tags = [];
+      if (isDone) tags.push(`<span class="tag done">已建單</span>`);
+      if (o.shipmentNo) tags.push(`<span class="tag in">${o.shipmentNo}</span>`);
+      if (o.isPaid) tags.push(`<span class="tag ok">已收款</span>`);
+      else if (o.paymentMethod) tags.push(`<span class="tag warn">${{cash:"現金", transfer:"匯款", other:"其他"}[o.paymentMethod]||o.paymentMethod}</span>`);
+      const addrTag = o.address ? `<span class="muted" style="font-size:.82rem">📍 ${o.address}</span>` : `<span class="muted" style="font-size:.78rem;color:#B07418">⚠ 無地址（不會建出貨單）</span>`;
+
+      return `
+        <div class="order-card ${isDone ? "done" : ""}">
+          <div class="top">
+            <div>
+              <span class="cust">${o.customer || "(無名)"}</span>
+              ${tags.join(" ")}
+            </div>
+            <div class="flex" style="gap:4px">
+              <button class="btn ghost icon-only" data-edit="${o.orderId}" title="編輯" ${isDone ? "disabled" : ""}>✎</button>
+              <button class="btn ghost icon-only" data-rm="${o.orderId}" title="移除" ${isDone ? "disabled" : ""}>✕</button>
+            </div>
+          </div>
+          <div class="lines-mini">${linesText}</div>
+          <div class="meta">
+            ${addrTag}
+            <span style="margin-left:auto" class="amount-line">${fmt.money(o.total||0)}</span>
+          </div>
+          ${o.notes ? `<div class="muted" style="font-size:.82rem">📝 ${o.notes}</div>` : ""}
+        </div>`;
+    }).join("");
+  }
+
+  $orderList.addEventListener("click", async e => {
+    const eId = e.target.closest("[data-edit]")?.dataset.edit;
+    const rId = e.target.closest("[data-rm]")?.dataset.rm;
+    if (eId) openOrderModal(eId);
+    if (rId) {
+      if (!confirm("移除這筆客戶訂單？")) return;
+      currentBatch.orders = (currentBatch.orders||[]).filter(o => o.orderId !== rId);
+      renderOrders(); renderSku();
+      await autoPersist();
+    }
+  });
+
+  // 自動存檔：批次有名稱+日期就背景存，避免使用者中途重新整理丟資料
+  async function autoPersist() {
+    const name = document.getElementById("bName").value.trim();
+    const dStr = document.getElementById("bDate").value;
+    if (!name || !dStr) return;  // 連主檔都還沒填好就不存
+    await persistBatch();
+  }
+
+  // ============ SKU 匯總 ============
+  function renderSku() {
+    const agg = aggregateBatch(currentBatch);
+    document.getElementById("metaAmount").textContent = fmt.money(agg.totalAmount);
+
+    if (!agg.sku.length) {
+      $skuRows.innerHTML = `<tr><td colspan="5" class="empty">沒有品項，加客戶訂單後會自動匯總</td></tr>`;
+      updateConfirmHint(0, 0);
+      return;
+    }
+
+    let lackCount = 0;
+    $skuRows.innerHTML = agg.sku.map(s => {
+      const item = items.find(i => i.id === s.itemId);
+      const stock = Number(item?.stock || 0);
+      const diff  = stock - s.totalQty;   // 正 = 夠；負 = 缺
+      const pack  = Number(item?.defaultPackSize || 0);
+      const boxU  = item?.boxUnit || "箱";
+      const isLack = diff < 0;
+      if (isLack) lackCount++;
+
+      let suggest = "—";
+      if (isLack) {
+        const need = Math.abs(diff);
+        if (pack > 0) {
+          const boxes = Math.ceil(need / pack);
+          suggest = `<b>叫 ${boxes} ${boxU}</b>（${boxes * pack} ${s.unit}，多 ${boxes*pack - need}）`;
+        } else {
+          suggest = `<b>叫 ${need} ${s.unit}</b>`;
+        }
+      } else {
+        suggest = `<span class="muted">夠</span>`;
+      }
+
+      return `
+        <tr class="${isLack ? "lack" : "enough"}">
+          <td>
+            <b>${s.name}</b>
+            ${pack > 0 ? `<div class="muted" style="font-size:.78rem">${pack} ${s.unit}/${boxU}</div>` : ""}
+          </td>
+          <td class="num">${fmt.num(s.totalQty)} ${s.unit}</td>
+          <td class="num">${item ? fmt.num(stock) + " " + s.unit : `<span style="color:var(--tomato)">品項已刪除</span>`}</td>
+          <td class="num">${item ? (diff >= 0 ? `+${fmt.num(diff)}` : fmt.num(diff)) : "—"}</td>
+          <td>${suggest}</td>
+        </tr>`;
+    }).join("");
+
+    updateConfirmHint(agg.orderCount, lackCount);
+  }
+
+  function updateConfirmHint(orderCount, lackCount) {
+    const $hint = document.getElementById("confirmHint");
+    const $btn  = document.getElementById("btnConfirm");
+    const isCompleted = currentBatch.status === "completed";
+    if (isCompleted) {
+      $hint.innerHTML = `✅ 此批次所有訂單已建立銷貨單與出貨單。`;
+      $btn.disabled = true;
+      $btn.textContent = "已確認，無需再操作";
+      return;
+    }
+    if (orderCount === 0) {
+      $hint.innerHTML = `先「＋ 加客戶訂單」並「💾 儲存批次資料」後，才能確認出貨。`;
+      $btn.disabled = true;
+      return;
+    }
+    let warn = lackCount > 0
+      ? `<span style="color:var(--tomato);font-weight:600">⚠ 有 ${lackCount} 個品項庫存不足</span>，仍可確認但庫存將變負，建議先去「進貨」補貨。<br>`
+      : `<span style="color:var(--leaf-deep)">✓ 所有品項庫存充足。</span><br>`;
+    $hint.innerHTML = warn + `按下確認後，系統會：<br>① 為每筆訂單建立<b>銷貨單</b>（自動扣庫存）<br>② 有地址者額外建立<b>出貨單</b>（可列印）<br>③ 已建單的客戶不會重複建立`;
+    $btn.disabled = false;
+    $btn.textContent = "✅ 確認出貨（建立銷貨單 + 出貨單）";
+  }
+
+  // ============ 確認出貨 ============
+  document.getElementById("btnConfirm").addEventListener("click", async () => {
+    // 先存當前狀態
+    const id = await persistBatch();
+    if (!id) return;
+
+    const orders = currentBatch.orders || [];
+    const pending = orders.filter(o => !o.saleId).length;
+    if (!pending) {
+      toast("沒有待建單的客戶訂單", "err");
+      return;
+    }
+    if (!confirm(`即將為 ${pending} 筆客戶建立銷貨單與出貨單，並扣庫存。\n確認進行？`)) return;
+
+    document.getElementById("btnConfirm").disabled = true;
+    document.getElementById("btnConfirm").textContent = "⏳ 處理中…";
+    try {
+      const res = await confirmBatch(id);
+      if (res.allDone && res.errors.length === 0) {
+        toast(`✓ 全部 ${res.successes.length} 筆已建立完成`, "ok");
+      } else {
+        const msg = `部分完成：成功 ${res.successes.length} 筆、失敗 ${res.errors.length} 筆\n\n` + res.errors.join("\n");
+        alert(msg);
+      }
+      // 重抓資料
+      const [newItems, newBatch] = await Promise.all([listItems(), getBatch(id)]);
+      items = newItems;
+      currentBatch = newBatch;
+      currentBatchId = id;
+      populateDetail();
+    } catch (err) {
+      console.error(err);
+      toast("執行失敗：" + err.message, "err");
+      document.getElementById("btnConfirm").disabled = false;
+      document.getElementById("btnConfirm").textContent = "✅ 確認出貨（建立銷貨單 + 出貨單）";
+    }
+  });
+
+  // ============ 客戶訂單 modal ============
+  let editingOrderId = null;
+
+  document.getElementById("btnAddOrder").addEventListener("click", () => {
+    // 加客戶訂單前要確保批次主檔填好（自動存檔機制需要）
+    const name = document.getElementById("bName").value.trim();
+    const dStr = document.getElementById("bDate").value;
+    if (!name || !dStr) {
+      toast("請先填批次名稱與配送日期，並按「💾 儲存批次資料」", "err");
+      document.getElementById("bName").focus();
+      return;
+    }
+    openOrderModal(null);
+  });
+  document.getElementById("btnCancelOrder").addEventListener("click", () => $orderModal.classList.remove("show"));
+  $orderModal.addEventListener("click", e => { if (e.target === $orderModal) $orderModal.classList.remove("show"); });
+
+  function openOrderModal(orderId) {
+    editingOrderId = orderId;
+    const order = orderId ? (currentBatch.orders || []).find(o => o.orderId === orderId) : null;
+    if (orderId && !order) return toast("找不到此訂單", "err");
+
+    document.getElementById("omTitle").textContent = orderId ? "編輯客戶訂單" : "新增客戶訂單";
+    document.getElementById("oId").value       = orderId || "";
+    document.getElementById("oCustomer").value = order?.customer || "";
+    document.getElementById("oPhone").value    = order?.phone || "";
+    document.getElementById("oAddr").value     = order?.address || "";
+    document.getElementById("oPay").value      = order?.paymentMethod || "";
+    document.getElementById("oPaid").checked   = !!order?.isPaid;
+    document.getElementById("oNote").value     = order?.notes || "";
+
+    $oLines.innerHTML = "";
+    const lines = order?.lines || [];
+    if (lines.length) lines.forEach(l => addModalLine(l));
+    else addModalLine();
+
+    recalcOrderTotal();
+    $orderModal.classList.add("show");
+  }
+
+  function modalLineHTML(l = {}) {
+    const opts = buildItemTierOptions(items).map(o => {
+      // 編輯既存 line：嘗試匹配「同 item + 同 qty + 同單價」自動選起來
+      const matchExact = (o.itemId === l.itemId &&
+                          Number(o.qty) === Number(l.qty) &&
+                          Math.abs(Number(o.unitPrice) - Number(l.price)) < 0.01);
+      return `<option value="${o.value}" data-item="${o.itemId}" data-name="${o.itemName}" data-unit="${o.unit}" data-qty="${o.qty}" data-unit-price="${o.unitPrice}" ${matchExact ? "selected" : ""}>${o.itemName}（庫存 ${o.stock}${o.unit}）— ${o.label} $${fmt.num(o.total)}</option>`;
+    }).join("");
+    return `
+      <div class="ol-row" data-line>
+        <select class="select ol-item" required><option value="">請選擇</option>${opts}</select>
+        <input class="input ol-qty"   type="number" min="1" step="1" value="${l.qty || 1}" required>
+        <input class="input ol-price" type="number" min="0" step="0.01" value="${l.price ?? ""}" placeholder="單價" required>
+        <input class="input ol-sub"   readonly tabindex="-1">
+        <button type="button" class="btn ghost icon-only ol-del" title="移除">✕</button>
+      </div>`;
+  }
+
+  function addModalLine(l) {
+    $oLines.insertAdjacentHTML("beforeend", modalLineHTML(l || {}));
+    bindModalLine($oLines.lastElementChild);
+    recalcOrderTotal();
+  }
+
+  function bindModalLine(row) {
+    const sl = row.querySelector(".ol-item");
+    const qty = row.querySelector(".ol-qty");
+    const price = row.querySelector(".ol-price");
+    sl.addEventListener("change", () => {
+      const o = sl.selectedOptions[0];
+      // 選了某組合 → 帶入數量 + 單價（仍可手改）
+      if (o?.dataset.qty)        qty.value   = o.dataset.qty;
+      if (o?.dataset.unitPrice)  price.value = o.dataset.unitPrice;
+      recalcOrderTotal();
+    });
+    qty.addEventListener("input", recalcOrderTotal);
+    price.addEventListener("input", recalcOrderTotal);
+    row.querySelector(".ol-del").addEventListener("click", () => { row.remove(); recalcOrderTotal(); });
+  }
+
+  function recalcOrderTotal() {
+    let total = 0;
+    [...$oLines.querySelectorAll("[data-line]")].forEach(r => {
+      const q = Number(r.querySelector(".ol-qty").value) || 0;
+      const p = Number(r.querySelector(".ol-price").value) || 0;
+      r.querySelector(".ol-sub").value = (q*p).toLocaleString();
+      total += q*p;
+    });
+    document.getElementById("oTotal").textContent = fmt.money(total);
+  }
+
+  document.getElementById("btnAddLineModal").addEventListener("click", () => addModalLine());
+
+  document.getElementById("orderForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const lines = [...$oLines.querySelectorAll("[data-line]")].map(r => {
+      const sl = r.querySelector(".ol-item");
+      const opt = sl.selectedOptions[0];
+      return {
+        itemId: opt?.dataset.item || "",
+        name:   opt?.dataset.name || "",
+        unit:   opt?.dataset.unit || "",
+        qty:    Number(r.querySelector(".ol-qty").value) || 0,
+        price:  Number(r.querySelector(".ol-price").value) || 0
+      };
+    }).filter(l => l.itemId && l.qty > 0);
+
+    if (!lines.length) return toast("請至少加一個品項", "err");
+
+    const customer = document.getElementById("oCustomer").value.trim();
+    if (!customer) return toast("請填客戶名稱", "err");
+
+    const payload = {
+      orderId: editingOrderId || genId(),
+      customer,
+      phone:    document.getElementById("oPhone").value.trim(),
+      address:  document.getElementById("oAddr").value.trim(),
+      paymentMethod: document.getElementById("oPay").value,
+      isPaid:   document.getElementById("oPaid").checked,
+      notes:    document.getElementById("oNote").value,
+      lines,
+      total:    lines.reduce((s,l) => s + l.qty * l.price, 0)
+    };
+
+    currentBatch.orders = currentBatch.orders || [];
+    if (editingOrderId) {
+      const idx = currentBatch.orders.findIndex(o => o.orderId === editingOrderId);
+      if (idx >= 0) currentBatch.orders[idx] = { ...currentBatch.orders[idx], ...payload };
+    } else {
+      currentBatch.orders.push(payload);
+    }
+    $orderModal.classList.remove("show");
+    renderOrders();
+    renderSku();
+    await autoPersist();
+  });
+
+  // ============ AI 解析貼上 ============
+  const $aiModal = document.getElementById("aiModal");
+  let aiParsed = []; // 解析結果暫存
+
+  document.getElementById("btnAiParse").addEventListener("click", () => {
+    const name = document.getElementById("bName").value.trim();
+    const dStr = document.getElementById("bDate").value;
+    if (!name || !dStr) {
+      toast("請先填批次名稱與配送日期", "err");
+      document.getElementById("bName").focus();
+      return;
+    }
+    document.getElementById("aiInput").value = "";
+    document.getElementById("aiResult").classList.add("hidden");
+    document.getElementById("aiOrderList").innerHTML = "";
+    aiParsed = [];
+    $aiModal.classList.add("show");
+    setTimeout(() => document.getElementById("aiInput").focus(), 50);
+  });
+
+  function closeAi() { $aiModal.classList.remove("show"); }
+  document.getElementById("btnAiClose").addEventListener("click", closeAi);
+  document.getElementById("btnAiCancel").addEventListener("click", closeAi);
+  $aiModal.addEventListener("click", e => { if (e.target === $aiModal) closeAi(); });
+
+  document.getElementById("btnAiRun").addEventListener("click", async () => {
+    const text = document.getElementById("aiInput").value.trim();
+    if (!text) return toast("請先貼上訂單文字", "err");
+    if (!items.length) return toast("品項清單為空，請先到「進貨/庫存」建立品項", "err");
+
+    const $btn = document.getElementById("btnAiRun");
+    $btn.disabled = true;
+    $btn.textContent = "⏳ AI 解析中…";
+    try {
+      const result = await parseOrders(text, items);
+      aiParsed = result.orders || [];
+      renderAiResult(result);
+      $btn.textContent = "🔄 重新解析";
+    } catch (err) {
+      console.error(err);
+      toast("解析失敗：" + err.message, "err");
+      $btn.textContent = "🚀 開始解析";
+    } finally {
+      $btn.disabled = false;
+    }
+  });
+
+  function renderAiResult(result) {
+    const $r = document.getElementById("aiResult");
+    const $w = document.getElementById("aiWarnings");
+    const $l = document.getElementById("aiOrderList");
+
+    if (result.warnings && result.warnings.length) {
+      $w.innerHTML = `<div style="background:#FBE9C8;padding:10px 12px;border-radius:8px;color:#B07418;font-size:.88rem;margin-bottom:10px;line-height:1.6">⚠ ${result.warnings.map(w=>`<div>• ${w}</div>`).join("")}</div>`;
+      $w.classList.remove("hidden");
+    } else {
+      $w.classList.add("hidden");
+    }
+
+    if (!aiParsed.length) {
+      $l.innerHTML = `<div class="empty" style="padding:20px;text-align:center;color:var(--ink-3)">沒有解析出任何訂單</div>`;
+      $r.classList.remove("hidden");
+      return;
+    }
+
+    $l.innerHTML = aiParsed.map((o, i) => {
+      const linesHtml = (o.lines||[]).map(l => {
+        const unmatched = !l.itemId;
+        return `<div style="${unmatched ? 'color:var(--tomato)' : ''}">${l.name||"?"} × ${fmt.num(l.qty||0)} ${l.unit||""} @ $${fmt.num(l.price||0)}${unmatched ? ' ⚠未配對品項' : ''}</div>`;
+      }).join("");
+      const total = (o.lines||[]).reduce((s,l)=>s+(Number(l.qty)||0)*(Number(l.price)||0), 0);
+      const tags = [];
+      if (o.isPaid) tags.push(`<span class="tag ok">已收款</span>`);
+      if (o.paymentMethod === "cash") tags.push(`<span class="tag warn">現金</span>`);
+      if (o.paymentMethod === "transfer") tags.push(`<span class="tag warn">匯款</span>`);
+
+      return `
+        <div class="order-card" style="cursor:default">
+          <div class="top">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;margin:0">
+              <input type="checkbox" data-i="${i}" checked style="width:18px;height:18px;cursor:pointer">
+              <span class="cust">${o.customer || "(無名)"}</span>
+              ${tags.join(" ")}
+            </label>
+            <span class="amount-line">${fmt.money(total)}</span>
+          </div>
+          <div class="lines-mini" style="font-size:.88rem">${linesHtml}</div>
+          ${o.address ? `<div class="muted" style="font-size:.82rem">📍 ${o.address}</div>` : ""}
+          ${o.notes ? `<div class="muted" style="font-size:.82rem">📝 ${o.notes}</div>` : ""}
+        </div>`;
+    }).join("");
+    $r.classList.remove("hidden");
+  }
+
+  document.getElementById("btnAiSelectAll").addEventListener("click", () => {
+    document.querySelectorAll("#aiOrderList input[type=checkbox]").forEach(c => c.checked = true);
+  });
+  document.getElementById("btnAiSelectNone").addEventListener("click", () => {
+    document.querySelectorAll("#aiOrderList input[type=checkbox]").forEach(c => c.checked = false);
+  });
+
+  document.getElementById("btnAiAdd").addEventListener("click", async () => {
+    const checked = [...document.querySelectorAll("#aiOrderList input[type=checkbox]:checked")];
+    const selected = checked.map(c => aiParsed[Number(c.dataset.i)]).filter(Boolean);
+    if (!selected.length) return toast("沒有勾選任何訂單", "err");
+
+    let added = 0;
+    let skipped = 0;
+    selected.forEach(o => {
+      const lines = (o.lines||[]).filter(l => l.itemId).map(l => ({
+        itemId: l.itemId,
+        name:   l.name || "",
+        unit:   l.unit || "",
+        qty:    Number(l.qty)||0,
+        price:  Number(l.price)||0
+      }));
+      if (!lines.length) { skipped++; return; }
+      currentBatch.orders = currentBatch.orders || [];
+      currentBatch.orders.push({
+        orderId: genId(),
+        customer: o.customer || "",
+        phone: o.phone || "",
+        address: o.address || "",
+        paymentMethod: o.paymentMethod || "",
+        isPaid: !!o.isPaid,
+        notes: o.notes || "",
+        lines,
+        total: lines.reduce((s,l)=>s+l.qty*l.price, 0)
+      });
+      added++;
+    });
+
+    closeAi();
+    renderOrders();
+    renderSku();
+    await autoPersist();
+    const msg = `✓ 加入 ${added} 筆訂單${skipped ? `（${skipped} 筆因無有效品項而略過）` : ""}`;
+    toast(msg, added ? "ok" : "err");
+  });
+
+  // ============ 啟動 ============
+  bootstrap();
+</script>
+</body>
+</html>

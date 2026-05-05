@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設定 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .lookup-list {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 12px; background: #fff;
+    border: 1px solid var(--line); border-radius: var(--r-md);
+    min-height: 60px;
+  }
+  .lookup-list:empty::before {
+    content: "尚未建立，於下方輸入後按「＋ 新增」";
+    color: var(--ink-3); font-style: italic; align-self: center;
+  }
+  .lookup-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 8px 6px 14px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    font-size: .9rem;
+  }
+  .lookup-pill button {
+    background: none; border: none; cursor: pointer;
+    color: var(--ink-3); font-size: 1rem; padding: 0 4px;
+    border-radius: 50%; line-height: 1;
+  }
+  .lookup-pill button:hover { color: var(--tomato); background: rgba(201,123,99,.1); }
+</style>
+</head>
+<body>
+<main class="container">
+  <div id="notAdmin" class="card hidden" style="text-align:center;padding:60px">
+    <h2>🔒 需要管理員權限</h2>
+    <p class="muted">這個頁面只有管理員（凱宇）能進入。</p>
+    <a href="dashboard.html" class="btn primary" style="margin-top:14px">回主控台</a>
+  </div>
+
+  <div id="adminPanel" class="hidden">
+    <div class="card">
+      <div class="card-h">
+        <h2>⚙️ 系統設定</h2>
+        <span class="muted" style="font-size:.85rem">這裡管理共用下拉清單，員工輸入時可以從這裡的選項挑</span>
+      </div>
+    </div>
+
+    <!-- 供應商 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>🏪 供應商</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        在「進貨/庫存」開立進貨單時，供應商欄位會出現這裡的選項。仍可手動輸入新名稱。
+      </p>
+      <div id="supplierList" class="lookup-list"></div>
+      <div class="row-fields" style="margin-top:14px">
+        <input class="input" id="newSupplier" placeholder="例：崑山水果">
+        <button class="btn primary" id="btnAddSupplier" type="button">＋ 新增</button>
+      </div>
+    </div>
+
+    <!-- 配送員 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>🚚 配送員</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        在「訂單批次」建批次時，配送員欄位會出現這裡的選項。
+      </p>
+      <div id="staffList" class="lookup-list"></div>
+      <div class="row-fields" style="margin-top:14px">
+        <input class="input" id="newStaff" placeholder="例：姸慧">
+        <button class="btn primary" id="btnAddStaff" type="button">＋ 新增</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { mountShell, toast, isAdmin } from "./js/app-shell.js";
+  import { getLookups, saveLookups } from "./js/data.js";
+
+  const me = await mountShell({ active: "settings" });
+
+  if (!isAdmin(me.email)) {
+    document.getElementById("notAdmin").classList.remove("hidden");
+  } else {
+    document.getElementById("adminPanel").classList.remove("hidden");
+    boot();
+  }
+
+  let lookups = { suppliers: [], deliveryStaff: [] };
+
+  async function boot() {
+    lookups = await getLookups();
+    renderSuppliers();
+    renderStaff();
+  }
+
+  function renderList(elId, arr, onRemove) {
+    const $el = document.getElementById(elId);
+    $el.innerHTML = arr.map((name, i) => `
+      <span class="lookup-pill">
+        ${name}
+        <button data-i="${i}" title="移除">✕</button>
+      </span>`).join("");
+    $el.querySelectorAll("button[data-i]").forEach(b => {
+      b.addEventListener("click", () => onRemove(Number(b.dataset.i)));
+    });
+  }
+
+  async function persist() {
+    try {
+      await saveLookups(lookups);
+    } catch (err) {
+      toast("儲存失敗：" + err.message, "err");
+    }
+  }
+
+  // ---- 供應商 ----
+  function renderSuppliers() {
+    renderList("supplierList", lookups.suppliers, async (i) => {
+      const name = lookups.suppliers[i];
+      if (!confirm(`移除供應商「${name}」？\n（不會影響已開的進貨單，只是新單下拉看不到）`)) return;
+      lookups.suppliers.splice(i, 1);
+      renderSuppliers();
+      await persist();
+      toast("已移除", "ok");
+    });
+  }
+  async function addSupplier() {
+    const $input = document.getElementById("newSupplier");
+    const v = $input.value.trim();
+    if (!v) return toast("請輸入名稱", "err");
+    if (lookups.suppliers.includes(v)) return toast("已存在相同名稱", "err");
+    lookups.suppliers.push(v);
+    lookups.suppliers.sort((a,b) => a.localeCompare(b, "zh-Hant"));
+    $input.value = "";
+    renderSuppliers();
+    await persist();
+    toast("✓ 已新增", "ok");
+  }
+  document.getElementById("btnAddSupplier").addEventListener("click", addSupplier);
+  document.getElementById("newSupplier").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addSupplier(); }
+  });
+
+  // ---- 配送員 ----
+  function renderStaff() {
+    renderList("staffList", lookups.deliveryStaff, async (i) => {
+      const name = lookups.deliveryStaff[i];
+      if (!confirm(`移除配送員「${name}」？`)) return;
+      lookups.deliveryStaff.splice(i, 1);
+      renderStaff();
+      await persist();
+      toast("已移除", "ok");
+    });
+  }
+  async function addStaff() {
+    const $input = document.getElementById("newStaff");
+    const v = $input.value.trim();
+    if (!v) return toast("請輸入名稱", "err");
+    if (lookups.deliveryStaff.includes(v)) return toast("已存在相同名稱", "err");
+    lookups.deliveryStaff.push(v);
+    lookups.deliveryStaff.sort((a,b) => a.localeCompare(b, "zh-Hant"));
+    $input.value = "";
+    renderStaff();
+    await persist();
+    toast("✓ 已新增", "ok");
+  }
+  document.getElementById("btnAddStaff").addEventListener("click", addStaff);
+  document.getElementById("newStaff").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addStaff(); }
+  });
+</script>
+</body>
+</html>

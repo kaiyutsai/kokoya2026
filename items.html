@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>品項清單 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* 售價組合 row */
+  .tier-row {
+    display: grid;
+    grid-template-columns: 1fr 90px 36px 110px 36px;
+    gap: 6px; align-items: center;
+    margin-bottom: 6px;
+  }
+  .tier-row .ti-unit {
+    color: var(--ink-3); font-size: .9rem; text-align: center;
+  }
+  .tier-row .ti-calc {
+    grid-column: 1/-1;
+    font-size: .8rem; color: var(--leaf-deep);
+    margin: -2px 0 6px 4px;
+    min-height: 1em;
+  }
+  /* 品項清單裡顯示售價組合的小標 */
+  .tag-tier {
+    display: inline-block; padding: 1px 7px; margin: 1px 2px;
+    background: #FFF6E6; color: #B07418;
+    border: 1px solid #F0DDB8;
+    border-radius: var(--r-pill);
+    font-size: .76rem; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<main class="container">
+  <div class="card">
+    <div class="card-h">
+      <h2>🍎 品項清單</h2>
+      <button class="btn primary" id="btnAdd">＋ 新增品項</button>
+    </div>
+    <p class="muted" style="font-size:.92rem;line-height:1.7;margin:0 0 14px">
+      品項是進貨/銷貨/批次都會用到的主檔。每個品項可以加多種「售價組合」（如「4顆100」、「7顆200」），銷貨時下拉就會出現這些選項，<b>1 秒打完一筆</b>。
+    </p>
+
+    <div class="row-fields" style="margin-bottom:14px">
+      <input class="input" id="kw" placeholder="🔍 搜尋品項名稱…">
+      <select class="select" id="filter">
+        <option value="all">全部品項</option>
+        <option value="low">低庫存（≤ 警示量）</option>
+        <option value="out">已售完</option>
+        <option value="hasTier">有售價組合</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <table class="tb" id="tb">
+        <thead>
+          <tr>
+            <th>品項</th>
+            <th>單位</th>
+            <th class="num">建議售價</th>
+            <th>售價組合</th>
+            <th class="num">平均成本</th>
+            <th class="num">目前庫存</th>
+            <th class="num">低庫存警示</th>
+            <th>狀態</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="9" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- 編輯 modal -->
+<div class="modal-mask" id="modal">
+  <div class="modal" style="width:min(660px, 95vw)">
+    <div class="card-h"><h2 id="mTitle">新增品項</h2></div>
+    <form id="form">
+      <input type="hidden" id="fId">
+      <div class="row-fields">
+        <div class="field"><label>品項名稱 *</label><input class="input" id="fName" required placeholder="例：紐西蘭蘋果80"></div>
+        <div class="field"><label>單位</label><input class="input" id="fUnit" placeholder="例：顆／盒／斤" value="顆"></div>
+      </div>
+      <div class="row-fields">
+        <div class="field"><label>建議售價（每基本單位）</label><input class="input" id="fPrice" type="number" min="0" step="1" placeholder="0"></div>
+        <div class="field"><label>低庫存警示量</label><input class="input" id="fLow" type="number" min="0" step="1" value="5"></div>
+      </div>
+      <div class="row-fields">
+        <div class="field"><label>預設裝箱規格（每箱顆/斤，進貨用）</label>
+          <input class="input" id="fPack" type="number" min="0" step="1" placeholder="例：蘋果常見 80，可空白">
+        </div>
+        <div class="field"><label>備用單位（如「箱」）</label><input class="input" id="fBoxUnit" placeholder="箱" value="箱"></div>
+      </div>
+      <div class="field"><label>分類</label>
+        <select class="select" id="fCat">
+          <option value="">未分類</option>
+          <option>蘋果類</option><option>柑橘類</option><option>梨類</option>
+          <option>瓜類</option><option>莓果類</option><option>熱帶水果</option>
+          <option>葡萄類</option><option>奇異果類</option><option>其他</option>
+        </select>
+      </div>
+
+      <!-- 售價組合 -->
+      <div class="field">
+        <label>售價組合（可多筆，銷貨/批次下拉會出現）</label>
+        <p class="muted" style="font-size:.82rem;line-height:1.6;margin:0 0 10px">
+          填法範例：<b>4 顆 100 元</b> → 數量填「4」、總價填「100」，系統自動算每顆 $25。<br>
+          <b>建議售價</b>會自動成為「單<span id="hUnit">顆</span>」選項（除非你下面也加了 qty=1 的組合）。
+        </p>
+        <div id="iTiers"></div>
+        <button type="button" class="btn ghost" id="btnAddTier">＋ 新增售價組合</button>
+      </div>
+
+      <div class="field"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：清晨進貨、產地…"></textarea></div>
+
+      <div id="warn" class="muted" style="font-size:.85rem;margin-bottom:10px"></div>
+
+      <div class="flex" style="justify-content:flex-end">
+        <button type="button" class="btn ghost" id="btnCancel">取消</button>
+        <button type="button" class="btn tomato" id="btnDel" style="display:none">刪除</button>
+        <button type="submit" class="btn primary">儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listItems, upsertItem, deleteItem } from "./js/data.js";
+
+  const me = await mountShell({ active: "items" });
+  const $rows  = document.getElementById("rows");
+  const $modal = document.getElementById("modal");
+  const $form  = document.getElementById("form");
+  const $kw    = document.getElementById("kw");
+  const $filter= document.getElementById("filter");
+  const $iTiers = document.getElementById("iTiers");
+  const $hUnit  = document.getElementById("hUnit");
+
+  let cache = [];
+
+  // ============ 列表 ============
+  function render() {
+    const kw = $kw.value.trim();
+    const f  = $filter.value;
+    let list = cache;
+    if (kw) list = list.filter(i => (i.name||"").includes(kw));
+    if (f === "low") list = list.filter(i => Number(i.stock||0) <= Number(i.lowStock ?? 5));
+    if (f === "out") list = list.filter(i => Number(i.stock||0) <= 0);
+    if (f === "hasTier") list = list.filter(i => Array.isArray(i.priceTiers) && i.priceTiers.length);
+
+    if (!list.length) {
+      $rows.innerHTML = `<tr><td colspan="9" class="empty">尚無品項，點右上「＋ 新增品項」建立第一筆 🍓</td></tr>`;
+      return;
+    }
+    $rows.innerHTML = list.map(i => {
+      const stock = Number(i.stock||0);
+      const low = Number(i.lowStock ?? 5);
+      const status = stock <= 0 ? `<span class="tag out">售完</span>`
+                   : stock <= low ? `<span class="tag warn">低庫存</span>`
+                   : `<span class="tag ok">充足</span>`;
+      const unitDisp = i.unit || "—";
+      const packInfo = i.defaultPackSize ? `<div class="muted" style="font-size:.78rem">${i.defaultPackSize} ${unitDisp}/${i.boxUnit||"箱"}</div>` : "";
+      const tiers = Array.isArray(i.priceTiers) ? i.priceTiers : [];
+      const tiersDisp = tiers.length
+        ? tiers.map(t => `<span class="tag-tier">${t.label || (t.qty + (i.unit||""))} $${fmt.num(t.price)}</span>`).join("")
+        : `<span class="muted" style="font-size:.78rem">—</span>`;
+      return `
+        <tr>
+          <td><b>${i.name||""}</b>${i.category?` <span class="muted">· ${i.category}</span>`:""}</td>
+          <td>${unitDisp}${packInfo}</td>
+          <td class="num">${i.price ? fmt.money(i.price) : "—"}</td>
+          <td>${tiersDisp}</td>
+          <td class="num">${i.avgCost ? fmt.money(Math.round(i.avgCost*100)/100) : "—"}</td>
+          <td class="num"><b>${fmt.num(stock)}</b></td>
+          <td class="num">${fmt.num(low)}</td>
+          <td>${status}</td>
+          <td class="right"><button class="btn ghost icon-only" data-edit="${i.id}">✎</button></td>
+        </tr>`;
+    }).join("");
+  }
+
+  async function reload() {
+    cache = await listItems();
+    render();
+  }
+
+  $kw.addEventListener("input", render);
+  $filter.addEventListener("change", render);
+
+  // ============ Modal ============
+  document.getElementById("btnAdd").addEventListener("click", () => openModal(null));
+  $rows.addEventListener("click", (e) => {
+    const id = e.target.closest("[data-edit]")?.dataset.edit;
+    if (id) openModal(cache.find(x => x.id === id));
+  });
+  document.getElementById("btnCancel").addEventListener("click", () => $modal.classList.remove("show"));
+  $modal.addEventListener("click", (e) => { if (e.target === $modal) $modal.classList.remove("show"); });
+
+  function openModal(item) {
+    document.getElementById("mTitle").textContent = item ? "編輯品項" : "新增品項";
+    document.getElementById("fId").value      = item?.id || "";
+    document.getElementById("fName").value    = item?.name || "";
+    document.getElementById("fUnit").value    = item?.unit || "顆";
+    document.getElementById("fPrice").value   = item?.price || "";
+    document.getElementById("fLow").value     = item?.lowStock ?? 5;
+    document.getElementById("fCat").value     = item?.category || "";
+    document.getElementById("fNote").value    = item?.note || "";
+    document.getElementById("fPack").value    = item?.defaultPackSize || "";
+    document.getElementById("fBoxUnit").value = item?.boxUnit || "箱";
+
+    syncUnitDisplay();
+
+    // 售價組合
+    $iTiers.innerHTML = "";
+    const tiers = (item?.priceTiers || []);
+    if (tiers.length) tiers.forEach(t => addTierRow(t));
+
+    const $del  = document.getElementById("btnDel");
+    const $warn = document.getElementById("warn");
+    if (item && isAdmin(me.email)) {
+      $del.style.display = "inline-flex";
+      $del.onclick = async () => {
+        if (!confirm(`確定刪除「${item.name}」？\n（不會反向影響歷史進貨/銷貨單）`)) return;
+        try {
+          await deleteItem(item.id);
+          toast("已刪除", "ok");
+          $modal.classList.remove("show");
+          reload();
+        } catch (err) { toast(err.message, "err"); }
+      };
+    } else {
+      $del.style.display = "none";
+    }
+    $warn.textContent = (item && !isAdmin(me.email))
+      ? "員工身份可編輯品項資訊，但無法刪除（僅管理員凱宇）"
+      : "";
+
+    $modal.classList.add("show");
+  }
+
+  // ----- 售價組合編輯器 -----
+  document.getElementById("fUnit").addEventListener("input", syncUnitDisplay);
+  function syncUnitDisplay() {
+    const u = document.getElementById("fUnit").value.trim() || "顆";
+    $hUnit.textContent = u;
+    $iTiers.querySelectorAll(".ti-unit").forEach(el => el.textContent = u);
+  }
+
+  document.getElementById("btnAddTier").addEventListener("click", () => addTierRow({}));
+
+  function addTierRow(t) {
+    const u = document.getElementById("fUnit").value.trim() || "顆";
+    const div = document.createElement("div");
+    div.className = "tier-row";
+    div.innerHTML = `
+      <input class="input ti-label" placeholder="標籤（可空，如「4顆組」）" value="${t.label || ""}">
+      <input class="input ti-qty" type="number" min="1" step="1" placeholder="數量" value="${t.qty ?? ""}">
+      <span class="ti-unit">${u}</span>
+      <input class="input ti-price" type="number" min="0" step="1" placeholder="總價" value="${t.price ?? ""}">
+      <button type="button" class="btn ghost icon-only ti-del" title="移除">✕</button>
+      <div class="ti-calc"></div>
+    `;
+    div.querySelector(".ti-del").addEventListener("click", () => { div.remove(); });
+    div.querySelector(".ti-qty").addEventListener("input", () => updateTierCalc(div));
+    div.querySelector(".ti-price").addEventListener("input", () => updateTierCalc(div));
+    $iTiers.appendChild(div);
+    updateTierCalc(div);
+  }
+
+  function updateTierCalc(div) {
+    const q = Number(div.querySelector(".ti-qty").value) || 0;
+    const p = Number(div.querySelector(".ti-price").value) || 0;
+    const u = document.getElementById("fUnit").value.trim() || "顆";
+    const $c = div.querySelector(".ti-calc");
+    if (q > 0 && p > 0) {
+      const each = Math.round((p / q) * 100) / 100;
+      $c.textContent = `→ 每${u} $${each}`;
+    } else {
+      $c.textContent = "";
+    }
+  }
+
+  // ============ Submit ============
+  $form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = document.getElementById("fId").value;
+    const name = document.getElementById("fName").value.trim();
+    if (!name) return toast("請填品項名稱", "err");
+
+    // 蒐集售價組合
+    const priceTiers = [...$iTiers.querySelectorAll(".tier-row")].map(row => ({
+      label: row.querySelector(".ti-label").value.trim(),
+      qty:   Number(row.querySelector(".ti-qty").value) || 0,
+      price: Number(row.querySelector(".ti-price").value) || 0
+    })).filter(t => t.qty > 0 && t.price > 0);
+
+    const data = {
+      name,
+      unit:            document.getElementById("fUnit").value.trim() || "顆",
+      price:           Number(document.getElementById("fPrice").value || 0),
+      lowStock:        Number(document.getElementById("fLow").value || 0),
+      category:        document.getElementById("fCat").value,
+      note:            document.getElementById("fNote").value,
+      defaultPackSize: Number(document.getElementById("fPack").value || 0),
+      boxUnit:         document.getElementById("fBoxUnit").value.trim() || "箱",
+      priceTiers
+    };
+    try {
+      await upsertItem(id || null, data);
+      toast(id ? "已更新" : "已新增", "ok");
+      $modal.classList.remove("show");
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast("儲存失敗：" + err.message, "err");
+    }
+  });
+
+  reload();
+</script>
+</body>
+</html>

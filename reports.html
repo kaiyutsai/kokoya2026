@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>報表 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container">
+  <div class="card">
+    <div class="card-h">
+      <h2>📊 營業報表</h2>
+      <div class="flex">
+        <select class="select" id="range">
+          <option value="7">近 7 天</option>
+          <option value="30" selected>近 30 天</option>
+          <option value="90">近 90 天</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid cols-4">
+      <div class="stat accent-orange"><div class="label">總營收</div><div class="value" id="vRev">—</div></div>
+      <div class="stat accent-leaf"><div class="label">總成本</div><div class="value" id="vCost">—</div></div>
+      <div class="stat accent-tomato"><div class="label">毛利</div><div class="value" id="vProfit">—</div><div class="delta" id="vMargin">—</div></div>
+      <div class="stat accent-lemon"><div class="label">銷售筆數</div><div class="value" id="vCnt">—</div></div>
+    </div>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:18px">
+    <section class="card">
+      <div class="card-h"><h3>每日營收 vs 毛利</h3></div>
+      <canvas id="chDaily" height="170"></canvas>
+    </section>
+    <section class="card">
+      <div class="card-h"><h3>品項銷售佔比</h3></div>
+      <canvas id="chPie" height="170"></canvas>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h"><h3>熱賣品項排行</h3></div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>排名</th><th>品項</th><th class="num">售出量</th><th class="num">營收</th><th class="num">毛利</th><th class="num">毛利率</th></tr></thead>
+        <tbody id="rank"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h"><h3>員工銷售統計</h3></div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>經辦人員</th><th class="num">單數</th><th class="num">營收</th><th class="num">平均單金額</th></tr></thead>
+        <tbody id="byUser"><tr><td colspan="4" class="empty">—</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script type="module">
+  import { mountShell, fmt } from "./js/app-shell.js";
+  import { listSales, listPurchases } from "./js/data.js";
+
+  await mountShell({ active: "reports" });
+
+  const COLORS = ["#E8A87C","#C97B63","#A8B89E","#E9C46A","#6F9AB6","#DDA15E","#9CAE85","#B07418"];
+
+  let chDaily, chPie;
+
+  async function load() {
+    const days = Number(document.getElementById("range").value);
+    const [sales, purchases] = await Promise.all([
+      listSales({ days }), listPurchases({ days })
+    ]);
+
+    // KPI
+    const rev = sales.reduce((a,b)=>a+(b.total||0), 0);
+    const profit = sales.reduce((a,b)=>a+(b.profit||0), 0);
+    const cost = rev - profit;
+    document.getElementById("vRev").textContent    = fmt.money(rev);
+    document.getElementById("vCost").textContent   = fmt.money(cost);
+    document.getElementById("vProfit").textContent = fmt.money(profit);
+    document.getElementById("vCnt").textContent    = sales.length;
+    document.getElementById("vMargin").textContent = rev>0 ? `毛利率 ${(profit/rev*100).toFixed(1)}%` : "—";
+
+    // Daily chart
+    const labels = [], rArr = [], pArr = [];
+    for (let i = days-1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const lbl = `${d.getMonth()+1}/${d.getDate()}`;
+      labels.push(lbl);
+      const todays = sales.filter(s => {
+        const sd = s.date.toDate ? s.date.toDate() : new Date(s.date);
+        return sd.toDateString() === d.toDateString();
+      });
+      rArr.push(todays.reduce((a,b)=>a+b.total,0));
+      pArr.push(todays.reduce((a,b)=>a+(b.profit||0),0));
+    }
+    if (chDaily) chDaily.destroy();
+    chDaily = new Chart(document.getElementById("chDaily"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label:"營收", data:rArr, backgroundColor:"rgba(232,168,124,.85)", borderRadius:6 },
+          { label:"毛利", data:pArr, backgroundColor:"rgba(168,184,158,.85)", borderRadius:6 }
+        ]
+      },
+      options: {
+        responsive:true,
+        plugins:{ legend:{ position:"bottom" }},
+        scales:{ y:{ beginAtZero:true, ticks:{ callback:v=>"$"+v }}}
+      }
+    });
+
+    // Pie / 品項排行
+    const itemAgg = {};
+    sales.forEach(s => (s.lines||[]).forEach(l => {
+      const k = l.name || "未知";
+      if (!itemAgg[k]) itemAgg[k] = { qty:0, rev:0, cost:0 };
+      itemAgg[k].qty  += Number(l.qty);
+      itemAgg[k].rev  += Number(l.lineTotal || (l.qty*l.price)) || 0;
+      itemAgg[k].cost += Number(l.qty)*Number(l.unitCost||0);
+    }));
+    const sorted = Object.entries(itemAgg).sort((a,b)=>b[1].rev-a[1].rev);
+
+    if (chPie) chPie.destroy();
+    chPie = new Chart(document.getElementById("chPie"), {
+      type: "doughnut",
+      data: {
+        labels: sorted.slice(0,6).map(([n])=>n),
+        datasets: [{ data: sorted.slice(0,6).map(([,v])=>v.rev), backgroundColor: COLORS, borderColor:"#FAF6EE", borderWidth:3 }]
+      },
+      options: { plugins: { legend: { position: "right" }}}
+    });
+
+    document.getElementById("rank").innerHTML = sorted.length
+      ? sorted.slice(0,12).map(([n,v],i) => {
+          const p = v.rev - v.cost;
+          const m = v.rev>0 ? (p/v.rev*100).toFixed(1)+"%" : "—";
+          return `<tr>
+            <td>${["🥇","🥈","🥉"][i] || (i+1)}</td>
+            <td>${n}</td>
+            <td class="num">${fmt.num(v.qty)}</td>
+            <td class="num">${fmt.money(v.rev)}</td>
+            <td class="num">${fmt.money(p)}</td>
+            <td class="num">${m}</td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="6" class="empty">無資料</td></tr>`;
+
+    // By user
+    const userAgg = {};
+    sales.forEach(s => {
+      const u = s.createdByName || "—";
+      if (!userAgg[u]) userAgg[u] = { cnt:0, rev:0 };
+      userAgg[u].cnt += 1;
+      userAgg[u].rev += s.total || 0;
+    });
+    const userArr = Object.entries(userAgg).sort((a,b)=>b[1].rev-a[1].rev);
+    document.getElementById("byUser").innerHTML = userArr.length
+      ? userArr.map(([u,v]) => `<tr>
+          <td>${u}</td>
+          <td class="num">${v.cnt}</td>
+          <td class="num">${fmt.money(v.rev)}</td>
+          <td class="num">${fmt.money(Math.round(v.rev / v.cnt))}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4" class="empty">無資料</td></tr>`;
+  }
+
+  document.getElementById("range").addEventListener("change", load);
+  load();
+</script>
+</body>
+</html>

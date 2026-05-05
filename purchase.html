@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>進貨 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container">
+  <div class="grid cols-2">
+    <section class="card">
+      <div class="card-h"><h2>📦 新增進貨單</h2></div>
+      <form id="form">
+        <div class="row-fields">
+          <div class="field"><label>進貨日期</label><input type="date" class="input" id="fDate" required></div>
+          <div class="field"><label>供應商</label><input class="input" id="fSupplier" list="dlSupplier" placeholder="例：崑山水果（從清單選或手動輸入）"></div>
+        </div>
+
+        <h3 style="margin-top:6px">品項明細</h3>
+        <div id="lines"></div>
+        <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+        <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：分兩車到貨、車資另計…"></textarea></div>
+
+        <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
+          <div class="muted">總成本</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--leaf-deep)" id="total">$0</div>
+        </div>
+
+        <div class="flex" style="justify-content:flex-end;margin-top:14px">
+          <button type="reset" class="btn ghost">清空</button>
+          <button type="submit" class="btn leaf">💾 儲存進貨單</button>
+        </div>
+      </form>
+    </section>
+
+    <section>
+      <div class="grid cols-2">
+        <div class="stat accent-leaf"><div class="label">本月進貨</div><div class="value" id="vMonth">—</div></div>
+        <div class="stat accent-orange"><div class="label">近 7 天進貨</div><div class="value" id="vWeek">—</div></div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="card-h"><h3>使用說明</h3></div>
+        <ul style="padding-left:18px;color:var(--ink-3);line-height:1.9;font-size:.92rem">
+          <li><b>整箱進貨</b>（推薦給蘋果、橘子等論箱買的水果）：
+            <br>填「箱數 × 每箱顆數 × 每箱單價」，系統自動換算成顆，
+            <br>每箱顆數隨批次不同（80 / 60 / 32 都可），現場填即可</li>
+          <li><b>散裝進貨</b>：草莓論盒、香蕉論斤等，直接輸入「顆數 × 單價」</li>
+          <li>儲存後 <b>自動加入庫存</b>（以基本單位顆/斤儲存）</li>
+          <li>使用 <b>加權平均成本</b> 計算每顆成本，用於毛利分析</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h"><h2>📒 近 30 天進貨</h2>
+      <input class="input" id="kw" placeholder="🔍 搜尋供應商/品項" style="width:220px">
+    </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>日期</th><th>單號</th><th>供應商</th><th>品項</th><th class="num">總成本</th><th>經辦</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="7" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <datalist id="dlSupplier"></datalist>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import {
+    listItems, addPurchase, listPurchases, deletePurchase, getLookups
+  } from "./js/data.js";
+
+  const me = await mountShell({ active: "purchase" });
+  const $lines = document.getElementById("lines");
+  const $form  = document.getElementById("form");
+  const $rows  = document.getElementById("rows");
+  const $kw    = document.getElementById("kw");
+  document.getElementById("fDate").value = fmt.dateInput(new Date());
+
+  let items = await listItems();
+  let cache = [];
+  let lookups = { suppliers: [], deliveryStaff: [] };
+  // 載入供應商清單到 datalist
+  getLookups().then(l => {
+    lookups = l;
+    document.getElementById("dlSupplier").innerHTML =
+      (lookups.suppliers || []).map(s => `<option value="${s}">`).join("");
+  }).catch(() => {});
+
+  function lineRow() {
+    const opts = items.map(i => `
+      <option value="${i.id}"
+              data-cost="${Math.round((i.avgCost||0)*100)/100}"
+              data-unit="${i.unit||'顆'}"
+              data-boxunit="${i.boxUnit||'箱'}"
+              data-pack="${i.defaultPackSize||0}">${i.name}（庫存 ${i.stock||0} ${i.unit||''}）</option>`).join("");
+    return `
+      <div class="line-row" style="margin-bottom:14px;border:1px dashed var(--line);border-radius:var(--r-md);padding:12px 12px 6px;background:#fff">
+        <div class="row-fields" style="margin-bottom:6px;align-items:end">
+          <div class="field" style="margin-bottom:0;grid-column:span 2"><label>品項</label>
+            <select class="select sl-item" required><option value="">請選擇</option>${opts}</select>
+          </div>
+          <div class="field" style="margin-bottom:0"><label>進貨方式</label>
+            <select class="select sl-mode">
+              <option value="box" selected>整箱進貨（推薦）</option>
+              <option value="bulk">散裝（直接論顆/斤）</option>
+            </select>
+          </div>
+          <div><button type="button" class="btn ghost icon-only sl-del" title="移除此行">✕</button></div>
+        </div>
+
+        <!-- 整箱模式 -->
+        <div class="row-fields sl-box-mode" style="align-items:end">
+          <div class="field" style="margin-bottom:6px"><label>箱數 <span class="sl-boxunit muted"></span></label>
+            <input class="input sl-pq" type="number" min="0" step="1" value="1"></div>
+          <div class="field" style="margin-bottom:6px"><label>每箱數量 <span class="sl-unit muted"></span></label>
+            <input class="input sl-ps" type="number" min="0" step="1" placeholder="如 80"></div>
+          <div class="field" style="margin-bottom:6px"><label>每箱單價</label>
+            <input class="input sl-pc" type="number" min="0" step="1" placeholder="$/箱"></div>
+          <div class="field" style="margin-bottom:6px"><label class="muted">總數量</label>
+            <input class="input sl-qty" readonly tabindex="-1"></div>
+          <div class="field" style="margin-bottom:6px"><label class="muted">每<span class="sl-unit2"></span>成本</label>
+            <input class="input sl-cost" readonly tabindex="-1"></div>
+          <div class="field" style="margin-bottom:6px"><label class="muted">小計</label>
+            <input class="input sl-sub" readonly tabindex="-1"></div>
+        </div>
+
+        <!-- 散裝模式 -->
+        <div class="row-fields sl-bulk-mode hidden" style="align-items:end">
+          <div class="field" style="margin-bottom:6px"><label>進貨數量 <span class="sl-unit3 muted"></span></label>
+            <input class="input sl-bqty" type="number" min="0" step="1" value="1"></div>
+          <div class="field" style="margin-bottom:6px"><label>單價</label>
+            <input class="input sl-bcost" type="number" min="0" step="1" placeholder="$/單位"></div>
+          <div class="field" style="margin-bottom:6px"><label class="muted">小計</label>
+            <input class="input sl-bsub" readonly tabindex="-1"></div>
+        </div>
+      </div>`;
+  }
+
+  function bindRow(row) {
+    const sl   = row.querySelector(".sl-item");
+    const mode = row.querySelector(".sl-mode");
+
+    // 顯示單位文字
+    const unitLabels = row.querySelectorAll(".sl-unit, .sl-unit2, .sl-unit3");
+    const boxLabels  = row.querySelectorAll(".sl-boxunit");
+
+    sl.addEventListener("change", () => {
+      const o = sl.selectedOptions[0];
+      const unit = o?.dataset.unit || "顆";
+      const bu   = o?.dataset.boxunit || "箱";
+      const pack = Number(o?.dataset.pack)||0;
+      const cost = Number(o?.dataset.cost)||0;
+      unitLabels.forEach(el => el.textContent = `(${unit})`);
+      boxLabels.forEach(el => el.textContent = `(${bu})`);
+      // 帶入預設裝箱規格
+      if (pack > 0 && !row.querySelector(".sl-ps").value) {
+        row.querySelector(".sl-ps").value = pack;
+      }
+      // 散裝模式預設帶入平均成本
+      if (cost > 0 && !row.querySelector(".sl-bcost").value) {
+        row.querySelector(".sl-bcost").value = cost;
+      }
+      recalcLine(row);
+    });
+
+    mode.addEventListener("change", () => {
+      const isBox = mode.value === "box";
+      row.querySelector(".sl-box-mode").classList.toggle("hidden", !isBox);
+      row.querySelector(".sl-bulk-mode").classList.toggle("hidden", isBox);
+      recalcLine(row);
+    });
+
+    ["sl-pq","sl-ps","sl-pc","sl-bqty","sl-bcost"].forEach(c => {
+      row.querySelector("." + c).addEventListener("input", () => recalcLine(row));
+    });
+    row.querySelector(".sl-del").addEventListener("click", () => { row.remove(); recalc(); });
+  }
+
+  function recalcLine(row) {
+    const isBox = row.querySelector(".sl-mode").value === "box";
+    if (isBox) {
+      const pq = Number(row.querySelector(".sl-pq").value)||0;
+      const ps = Number(row.querySelector(".sl-ps").value)||0;
+      const pc = Number(row.querySelector(".sl-pc").value)||0;
+      const qty = pq * ps;
+      const cost = ps > 0 ? pc / ps : 0;
+      const sub = pq * pc;
+      row.querySelector(".sl-qty").value  = qty.toLocaleString();
+      row.querySelector(".sl-cost").value = cost ? "$" + (Math.round(cost*100)/100).toLocaleString() : "";
+      row.querySelector(".sl-sub").value  = sub.toLocaleString();
+    } else {
+      const q = Number(row.querySelector(".sl-bqty").value)||0;
+      const c = Number(row.querySelector(".sl-bcost").value)||0;
+      row.querySelector(".sl-bsub").value = (q*c).toLocaleString();
+    }
+    recalc();
+  }
+  function recalc() {
+    let total = 0;
+    [...$lines.querySelectorAll(".line-row")].forEach(r => {
+      const isBox = r.querySelector(".sl-mode").value === "box";
+      if (isBox) {
+        total += (Number(r.querySelector(".sl-pq").value)||0) * (Number(r.querySelector(".sl-pc").value)||0);
+      } else {
+        total += (Number(r.querySelector(".sl-bqty").value)||0) * (Number(r.querySelector(".sl-bcost").value)||0);
+      }
+    });
+    document.getElementById("total").textContent = fmt.money(total);
+  }
+  function addLine() {
+    $lines.insertAdjacentHTML("beforeend", lineRow());
+    bindRow($lines.lastElementChild);
+    recalc();
+  }
+  document.getElementById("btnAddLine").addEventListener("click", addLine);
+  addLine();
+
+  $form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const lines = [...$lines.querySelectorAll(".line-row")].map(r => {
+      const sl = r.querySelector(".sl-item");
+      const opt = sl.selectedOptions[0];
+      const name = opt ? opt.textContent.replace(/（庫存.*$/, "").trim() : "";
+      const unit = opt?.dataset.unit || "顆";
+      const isBox = r.querySelector(".sl-mode").value === "box";
+      if (isBox) {
+        const pq = Number(r.querySelector(".sl-pq").value)||0;   // 箱數
+        const ps = Number(r.querySelector(".sl-ps").value)||0;   // 每箱數量
+        const pc = Number(r.querySelector(".sl-pc").value)||0;   // 每箱單價
+        const qty  = pq * ps;                                    // 換算後總數（基本單位）
+        const cost = ps > 0 ? pc / ps : 0;                       // 每基本單位成本
+        return {
+          itemId: sl.value, name, unit,
+          mode: "box",
+          packQty: pq, packSize: ps, packCost: pc,
+          qty, cost
+        };
+      } else {
+        return {
+          itemId: sl.value, name, unit,
+          mode: "bulk",
+          qty: Number(r.querySelector(".sl-bqty").value)||0,
+          cost: Number(r.querySelector(".sl-bcost").value)||0
+        };
+      }
+    }).filter(l => l.itemId && l.qty > 0);
+    if (!lines.length) return toast("請至少加一個品項，且總數量需大於 0", "err");
+
+    try {
+      await addPurchase({
+        date: new Date(document.getElementById("fDate").value),
+        supplier: document.getElementById("fSupplier").value,
+        note: document.getElementById("fNote").value,
+        lines
+      });
+      toast("✓ 進貨單已儲存，庫存已加入", "ok");
+      $form.reset();
+      document.getElementById("fDate").value = fmt.dateInput(new Date());
+      $lines.innerHTML = ""; addLine();
+      items = await listItems();
+      reload();
+    } catch (err) { console.error(err); toast("儲存失敗：" + err.message, "err"); }
+  });
+
+  function loadStats() {
+    const today = new Date();
+    const inMonth = p => fmt.monthKey(p.date) === fmt.monthKey(today);
+    const wkAgo = new Date(); wkAgo.setDate(wkAgo.getDate() - 7);
+    const inWeek = p => (p.date.toDate ? p.date.toDate() : new Date(p.date)) >= wkAgo;
+    document.getElementById("vMonth").textContent = fmt.money(cache.filter(inMonth).reduce((a,b)=>a+b.total,0));
+    document.getElementById("vWeek").textContent  = fmt.money(cache.filter(inWeek).reduce((a,b)=>a+b.total,0));
+  }
+  async function reload() {
+    cache = await listPurchases({ days: 30 });
+    render();
+    loadStats();
+  }
+  function render() {
+    const kw = $kw.value.trim();
+    let list = cache;
+    if (kw) list = list.filter(p => (p.supplier||"").includes(kw)
+      || (p.lines||[]).some(l => (l.name||"").includes(kw)));
+    if (!list.length) {
+      $rows.innerHTML = `<tr><td colspan="7" class="empty">尚無進貨紀錄</td></tr>`;
+      return;
+    }
+    $rows.innerHTML = list.map(p => `
+      <tr>
+        <td>${fmt.date(p.date)}</td>
+        <td class="muted">${p.id.slice(0,6)}</td>
+        <td>${p.supplier || "—"}</td>
+        <td>${(p.lines||[]).map(l => {
+          if (l.mode === "box" && l.packSize) {
+            return `${l.name}：${l.packQty}箱×${l.packSize}${l.unit||""}＝${l.qty}${l.unit||""}`;
+          }
+          return `${l.name}×${l.qty}${l.unit||""}`;
+        }).join("、")}</td>
+        <td class="num"><b>${fmt.money(p.total)}</b></td>
+        <td>${p.createdByName || "—"}</td>
+        <td class="right">${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${p.id}" title="刪除（會反扣庫存）">🗑</button>` : ""}</td>
+      </tr>`).join("");
+  }
+  $kw.addEventListener("input", render);
+  $rows.addEventListener("click", async e => {
+    const id = e.target.closest("[data-del]")?.dataset.del;
+    if (id && confirm("刪除這筆進貨單？庫存會自動扣除。")) {
+      try { await deletePurchase(id); toast("已刪除", "ok"); items = await listItems(); reload(); }
+      catch (err) { toast(err.message, "err"); }
+    }
+  });
+
+  reload();
+</script>
+</body>
+</html>

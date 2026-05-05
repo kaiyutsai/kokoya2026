@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>出貨單 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container no-print">
+  <div class="grid cols-2">
+    <section class="card">
+      <div class="card-h"><h2>🚚 開立出貨單</h2></div>
+      <form id="form">
+        <div class="row-fields">
+          <div class="field"><label>出貨日期</label><input type="date" class="input" id="fDate" required></div>
+          <div class="field"><label>經辦人員</label><input class="input" id="fHandler"></div>
+        </div>
+        <div class="row-fields">
+          <div class="field"><label>收貨人 *</label><input class="input" id="fTo" required placeholder="例：王太太"></div>
+          <div class="field"><label>聯絡電話</label><input class="input" id="fPhone" placeholder="0912-345-678"></div>
+        </div>
+        <div class="field"><label>收貨地址 *</label><input class="input" id="fAddr" required placeholder="例：高雄市鳳山區中山路 100 號"></div>
+
+        <h3 style="margin-top:6px">出貨明細</h3>
+        <div id="lines"></div>
+        <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+        <div class="field" style="margin-top:14px"><label>備註 / 配送方式</label><textarea class="textarea" id="fNote" placeholder="例：宅配當日、貨到付款、易碎請小心…"></textarea></div>
+
+        <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px">
+          <div class="muted">合計</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="total">$0</div>
+        </div>
+
+        <div class="flex" style="justify-content:flex-end;margin-top:14px">
+          <button type="reset" class="btn ghost">清空</button>
+          <button type="submit" class="btn tomato">💾 建立並預覽列印</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><h2>📒 近 60 天出貨單</h2>
+        <input class="input" id="kw" placeholder="🔍 搜尋收貨人/單號" style="width:200px">
+      </div>
+      <div class="table-wrap">
+        <table class="tb">
+          <thead><tr><th>單號</th><th>日期</th><th>收貨人</th><th class="num">金額</th><th></th></tr></thead>
+          <tbody id="rows"><tr><td colspan="5" class="empty">載入中…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- 列印預覽區 -->
+<section id="printArea" class="container hidden" style="padding-top:30px">
+  <div class="no-print flex" style="justify-content:flex-end;margin-bottom:14px;gap:8px">
+    <button class="btn ghost" id="btnBack">← 返回</button>
+    <button class="btn primary" id="btnPrint">🖨 列印 / 另存 PDF</button>
+  </div>
+  <div class="ship-doc" id="doc"></div>
+</section>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listItems, addShipment, listShipments, getShipment, deleteShipment } from "./js/data.js";
+
+  const me = await mountShell({ active: "shipping" });
+  document.getElementById("fDate").value = fmt.dateInput(new Date());
+  document.getElementById("fHandler").value = me.name;
+
+  let items = await listItems();
+  let cache = [];
+
+  const $lines = document.getElementById("lines");
+  const $rows  = document.getElementById("rows");
+  const $kw    = document.getElementById("kw");
+
+  function lineRow() {
+    const opts = items.map(i => `<option value="${i.id}" data-name="${i.name}" data-unit="${i.unit||''}" data-price="${i.price||0}">${i.name}</option>`).join("");
+    return `
+      <div class="row-fields line-row" style="margin-bottom:8px;align-items:end">
+        <div class="field" style="margin-bottom:0"><label>品項</label>
+          <select class="select sl-item" required><option value="">請選擇</option>${opts}</select>
+        </div>
+        <div class="field" style="margin-bottom:0"><label>數量</label>
+          <input class="input sl-qty" type="number" min="1" step="1" value="1" required></div>
+        <div class="field" style="margin-bottom:0"><label>單位</label>
+          <input class="input sl-unit" placeholder="箱"></div>
+        <div class="field" style="margin-bottom:0"><label>單價</label>
+          <input class="input sl-price" type="number" min="0" step="1" required></div>
+        <div class="field" style="margin-bottom:0"><label>小計</label>
+          <input class="input sl-sub" readonly tabindex="-1"></div>
+        <div><button type="button" class="btn ghost icon-only sl-del">✕</button></div>
+      </div>`;
+  }
+  function bindRow(row) {
+    const sl = row.querySelector(".sl-item");
+    sl.addEventListener("change", () => {
+      const o = sl.selectedOptions[0];
+      row.querySelector(".sl-unit").value  = o?.dataset.unit || "";
+      row.querySelector(".sl-price").value = o?.dataset.price || 0;
+      recalc();
+    });
+    row.querySelector(".sl-qty").addEventListener("input", recalc);
+    row.querySelector(".sl-price").addEventListener("input", recalc);
+    row.querySelector(".sl-del").addEventListener("click", () => { row.remove(); recalc(); });
+  }
+  function recalc() {
+    let total = 0;
+    [...$lines.querySelectorAll(".line-row")].forEach(r => {
+      const q = Number(r.querySelector(".sl-qty").value)||0;
+      const p = Number(r.querySelector(".sl-price").value)||0;
+      r.querySelector(".sl-sub").value = (q*p).toLocaleString();
+      total += q*p;
+    });
+    document.getElementById("total").textContent = fmt.money(total);
+  }
+  function addLine() {
+    $lines.insertAdjacentHTML("beforeend", lineRow());
+    bindRow($lines.lastElementChild);
+    recalc();
+  }
+  document.getElementById("btnAddLine").addEventListener("click", addLine);
+  addLine();
+
+  document.getElementById("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const lines = [...$lines.querySelectorAll(".line-row")].map(r => ({
+      itemId: r.querySelector(".sl-item").value,
+      name:   r.querySelector(".sl-item").selectedOptions[0]?.dataset.name || "",
+      unit:   r.querySelector(".sl-unit").value,
+      qty:    Number(r.querySelector(".sl-qty").value)||0,
+      price:  Number(r.querySelector(".sl-price").value)||0
+    })).filter(l => l.itemId && l.qty > 0);
+    if (!lines.length) return toast("請至少加一個品項", "err");
+
+    try {
+      const ship = {
+        date: new Date(document.getElementById("fDate").value),
+        recipient: document.getElementById("fTo").value.trim(),
+        phone:     document.getElementById("fPhone").value.trim(),
+        address:   document.getElementById("fAddr").value.trim(),
+        handlerName: document.getElementById("fHandler").value.trim() || me.name,
+        note:      document.getElementById("fNote").value,
+        lines
+      };
+      const { id, docNo } = await addShipment(ship);
+      toast(`✓ 出貨單 ${docNo} 已建立`, "ok");
+      reload();
+      previewDoc(id);
+    } catch (err) { console.error(err); toast("建立失敗：" + err.message, "err"); }
+  });
+
+  // 載入清單
+  async function reload() {
+    cache = await listShipments({ days: 60 });
+    render();
+  }
+  function render() {
+    const kw = $kw.value.trim();
+    let list = cache;
+    if (kw) list = list.filter(s => (s.recipient||"").includes(kw) || (s.docNo||"").includes(kw));
+    if (!list.length) {
+      $rows.innerHTML = `<tr><td colspan="5" class="empty">尚無紀錄</td></tr>`; return;
+    }
+    $rows.innerHTML = list.map(s => `
+      <tr>
+        <td><b>${s.docNo}</b></td>
+        <td>${fmt.date(s.date)}</td>
+        <td>${s.recipient || "—"}</td>
+        <td class="num">${fmt.money(s.total)}</td>
+        <td class="right flex" style="justify-content:flex-end;gap:4px">
+          <button class="btn ghost icon-only" data-view="${s.id}" title="預覽列印">🖨</button>
+          ${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${s.id}" title="刪除">🗑</button>` : ""}
+        </td>
+      </tr>`).join("");
+  }
+  $kw.addEventListener("input", render);
+  $rows.addEventListener("click", async (e) => {
+    const view = e.target.closest("[data-view]")?.dataset.view;
+    const del  = e.target.closest("[data-del]")?.dataset.del;
+    if (view) previewDoc(view);
+    if (del && confirm("確定刪除這筆出貨單？")) {
+      try { await deleteShipment(del); toast("已刪除", "ok"); reload(); }
+      catch (err){ toast(err.message, "err"); }
+    }
+  });
+
+  // ----- 預覽列印 -----
+  const $form  = document.querySelector("main");
+  const $print = document.getElementById("printArea");
+  document.getElementById("btnBack").addEventListener("click", () => {
+    $print.classList.add("hidden"); $form.classList.remove("hidden");
+  });
+  document.getElementById("btnPrint").addEventListener("click", () => window.print());
+
+  async function previewDoc(id) {
+    const s = await getShipment(id);
+    if (!s) return toast("找不到此出貨單", "err");
+    const linesHtml = (s.lines||[]).map((l,i)=>`
+      <tr>
+        <td>${i+1}</td>
+        <td>${l.name}</td>
+        <td class="num">${fmt.num(l.qty)}</td>
+        <td>${l.unit||""}</td>
+        <td class="num">${fmt.money(l.price)}</td>
+        <td class="num">${fmt.money(Number(l.qty)*Number(l.price))}</td>
+      </tr>`).join("");
+    document.getElementById("doc").innerHTML = `
+      <div class="head">
+        <div>
+          <div class="title">出 貨 單</div>
+          <div class="sub">SHIPPING NOTE</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Noto Serif TC',serif;font-size:1.4rem;font-weight:700;color:var(--ink-2);letter-spacing:.15em">果果家</div>
+          <div style="color:var(--ink-3);letter-spacing:.2em;font-size:.85rem">KOKOYA</div>
+          <img src="assets/logo.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:60px;margin-top:6px" alt="">
+        </div>
+      </div>
+
+      <div class="meta">
+        <div><div class="lbl">單號</div><div class="val">${s.docNo}</div></div>
+        <div><div class="lbl">出貨日期</div><div class="val">${fmt.date(s.date)}</div></div>
+        <div><div class="lbl">收貨人</div><div class="val">${s.recipient||""}</div></div>
+        <div><div class="lbl">聯絡電話</div><div class="val">${s.phone||""}</div></div>
+        <div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address||""}</div></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th style="width:40px">#</th><th>品項</th><th class="num" style="width:80px">數量</th><th style="width:60px">單位</th><th class="num" style="width:90px">單價</th><th class="num" style="width:110px">小計</th></tr>
+        </thead>
+        <tbody>${linesHtml}</tbody>
+      </table>
+
+      <div class="totals">
+        <div class="row">合計品項：${(s.lines||[]).length} 項　共 ${fmt.num((s.lines||[]).reduce((a,b)=>a+Number(b.qty),0))} 件</div>
+        <div class="grand">總計　${fmt.money(s.total)}</div>
+      </div>
+
+      ${s.note ? `<div style="margin-top:18px;padding:10px 14px;border-left:3px solid var(--orange);background:var(--paper-2);border-radius:0 8px 8px 0;font-size:.92rem">備註：${s.note}</div>` : ""}
+
+      <div class="signs">
+        <div class="sig">收貨人簽收</div>
+        <div class="sig">經辦人員：${s.handlerName||""}</div>
+        <div class="sig">果果家 KOKOYA</div>
+      </div>
+    `;
+    $form.classList.add("hidden");
+    $print.classList.remove("hidden");
+    window.scrollTo(0, 0);
+  }
+
+  reload();
+</script>
+</body>
+</html>

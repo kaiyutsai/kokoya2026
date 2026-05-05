@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>主控台 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container">
+  <div class="grid cols-4" id="stats">
+    <div class="stat accent-orange"><div class="label">今日營收</div><div class="value" id="sToday">—</div><div class="delta">含 <span id="sTodayCnt">0</span> 筆銷售</div><div class="ico">🍊</div></div>
+    <div class="stat accent-tomato"><div class="label">本月營收</div><div class="value" id="sMonth">—</div><div class="delta">毛利 <span id="sMonthProfit">—</span></div><div class="ico">🍎</div></div>
+    <div class="stat accent-leaf"><div class="label">本月進貨成本</div><div class="value" id="sCost">—</div><div class="delta">共 <span id="sPurchaseCnt">0</span> 筆</div><div class="ico">📦</div></div>
+    <div class="stat accent-lemon"><div class="label">低庫存品項</div><div class="value" id="sLow">—</div><div class="delta" id="sLowList">無</div><div class="ico">⚠️</div></div>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:20px">
+    <section class="card">
+      <div class="card-h"><h2>近 7 天銷售</h2><a href="reports.html" class="muted">完整報表 →</a></div>
+      <canvas id="ch7" height="160"></canvas>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><h2>熱賣品項（本月）</h2><a href="sales.html" class="muted">前往銷貨 →</a></div>
+      <div id="topItems"><div class="loader"></div></div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h"><h2>最近銷貨</h2><a href="sales.html" class="btn primary">＋ 新增銷貨</a></div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>日期</th><th>客人</th><th>品項</th><th class="num">總金額</th><th>經辦</th></tr></thead>
+        <tbody id="recent"><tr><td colspan="5" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h"><h2>快速操作</h2></div>
+    <div class="flex flex-wrap gap-sm">
+      <a href="batches.html"   class="btn primary">📋 訂單批次（推薦）</a>
+      <a href="sales.html"     class="btn">🛒 新增銷貨</a>
+      <a href="purchase.html"  class="btn leaf">📦 新增進貨</a>
+      <a href="items.html"     class="btn">🍎 品項清單</a>
+      <a href="shipping.html"  class="btn tomato">🚚 開立出貨單</a>
+      <a href="reports.html"   class="btn">📊 查看報表</a>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script type="module">
+  import { mountShell, fmt } from "./js/app-shell.js";
+  import { listSales, listPurchases, listItems } from "./js/data.js";
+
+  await mountShell({ active: "dashboard" });
+
+  const [sales, purchases, items] = await Promise.all([
+    listSales({ days: 35 }),
+    listPurchases({ days: 35 }),
+    listItems()
+  ]);
+
+  // ---- 今日 ----
+  const isSameDay = (a,b) => {
+    const da = a.toDate ? a.toDate() : new Date(a);
+    return da.getFullYear()===b.getFullYear() && da.getMonth()===b.getMonth() && da.getDate()===b.getDate();
+  };
+  const today = new Date();
+  const todaySales = sales.filter(s => isSameDay(s.date, today));
+  document.getElementById("sToday").textContent = fmt.money(todaySales.reduce((s,x)=>s+x.total,0));
+  document.getElementById("sTodayCnt").textContent = todaySales.length;
+
+  // ---- 本月 ----
+  const monthKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
+  const inMonth = (s) => fmt.monthKey(s.date) === monthKey;
+  const monthSales = sales.filter(inMonth);
+  const monthRev = monthSales.reduce((a,b)=>a+b.total,0);
+  const monthProfit = monthSales.reduce((a,b)=>a+(b.profit||0),0);
+  document.getElementById("sMonth").textContent = fmt.money(monthRev);
+  document.getElementById("sMonthProfit").textContent = fmt.money(monthProfit);
+
+  const monthPurchases = purchases.filter(inMonth);
+  document.getElementById("sCost").textContent = fmt.money(monthPurchases.reduce((a,b)=>a+b.total,0));
+  document.getElementById("sPurchaseCnt").textContent = monthPurchases.length;
+
+  // ---- 低庫存 (<= 5) ----
+  const low = items.filter(i => Number(i.stock||0) <= Number(i.lowStock ?? 5));
+  document.getElementById("sLow").textContent = low.length;
+  document.getElementById("sLowList").textContent = low.length ? low.slice(0,4).map(i=>i.name).join("、") + (low.length>4?` 等 ${low.length} 項`:"") : "庫存充足";
+
+  // ---- 近 7 天 折線 ----
+  const days = [];
+  const dailyTotals = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const label = `${d.getMonth()+1}/${d.getDate()}`;
+    days.push(label);
+    dailyTotals.push(sales.filter(s=>isSameDay(s.date,d)).reduce((a,b)=>a+b.total,0));
+  }
+  new Chart(document.getElementById("ch7"), {
+    type: "line",
+    data: { labels: days, datasets: [{
+      label: "銷售額", data: dailyTotals,
+      borderColor: "#DD8E5C", backgroundColor: "rgba(232,168,124,.18)",
+      fill: true, tension: .35, borderWidth: 2.5, pointRadius: 4, pointBackgroundColor: "#C97B63"
+    }]},
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => "$"+v } } }
+    }
+  });
+
+  // ---- 本月熱賣 ----
+  const topMap = {};
+  monthSales.forEach(s => (s.lines||[]).forEach(l => {
+    topMap[l.name] = (topMap[l.name]||0) + Number(l.qty);
+  }));
+  const top = Object.entries(topMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  document.getElementById("topItems").innerHTML = top.length
+    ? `<table class="tb"><tbody>${top.map(([n,q],i)=>`
+        <tr><td style="width:40px">${["🥇","🥈","🥉","④","⑤"][i]}</td>
+            <td>${n}</td><td class="num">${fmt.num(q)} 份</td></tr>`).join("")}
+       </tbody></table>`
+    : `<p class="muted center">本月尚無銷售紀錄</p>`;
+
+  // ---- 最近銷貨 ----
+  const recent = sales.slice(0, 6);
+  const tbody = document.getElementById("recent");
+  if (!recent.length) tbody.innerHTML = `<tr><td colspan="5" class="empty">尚無銷貨紀錄</td></tr>`;
+  else tbody.innerHTML = recent.map(s => `
+    <tr>
+      <td>${fmt.date(s.date)}</td>
+      <td>${s.customer || "—"}</td>
+      <td>${(s.lines||[]).map(l=>`${l.name}×${l.qty}`).join("、") || "—"}</td>
+      <td class="num">${fmt.money(s.total)}</td>
+      <td>${s.createdByName || "—"}</td>
+    </tr>`).join("");
+</script>
+</body>
+</html>

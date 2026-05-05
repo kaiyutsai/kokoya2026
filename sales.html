@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>銷貨記錄 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container">
+  <div class="grid cols-2">
+    <!-- 新增銷貨 -->
+    <section class="card">
+      <div class="card-h"><h2>🛒 新增銷貨單</h2></div>
+      <form id="form">
+        <div class="row-fields">
+          <div class="field"><label>銷售日期</label><input type="date" class="input" id="fDate" required></div>
+          <div class="field"><label>客人 / 對象</label><input class="input" id="fCustomer" placeholder="例：王太太、現場客人"></div>
+        </div>
+
+        <h3 style="margin-top:6px">品項明細</h3>
+        <div id="lines"></div>
+        <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+        <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：宅配、自取、付現…"></textarea></div>
+
+        <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
+          <div class="muted">合計</div>
+          <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="total">$0</div>
+        </div>
+
+        <div class="flex" style="justify-content:flex-end;margin-top:14px">
+          <button type="reset" class="btn ghost">清空</button>
+          <button type="submit" class="btn primary">💾 儲存銷貨單</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 統計小卡 -->
+    <section>
+      <div class="grid cols-2">
+        <div class="stat accent-orange"><div class="label">今日銷售</div><div class="value" id="vToday">—</div></div>
+        <div class="stat accent-tomato"><div class="label">本月銷售</div><div class="value" id="vMonth">—</div></div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="card-h"><h3>提示</h3></div>
+        <ul style="padding-left:18px;color:var(--ink-3);line-height:1.9">
+          <li>儲存銷貨單後，庫存會 <b>自動扣除</b></li>
+          <li>單價會自動帶入「品項主檔」的建議售價，可現場修改</li>
+          <li>若品項不在清單，請先到「庫存／品項」新增</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h">
+      <h2>📒 近 30 天銷貨</h2>
+      <div class="flex">
+        <input class="input" id="kw" placeholder="🔍 搜尋客人/品項" style="width:220px">
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>日期</th><th>單號</th><th>客人</th><th>品項</th><th class="num">合計</th><th>經辦</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="7" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listItems, addSale, listSales, deleteSale, buildItemTierOptions } from "./js/data.js";
+
+  const me = await mountShell({ active: "sales" });
+  const $lines = document.getElementById("lines");
+  const $form  = document.getElementById("form");
+  const $rows  = document.getElementById("rows");
+  const $kw    = document.getElementById("kw");
+  document.getElementById("fDate").value = fmt.dateInput(new Date());
+
+  let items = await listItems();
+  let salesCache = [];
+
+  function buildOpts() {
+    return buildItemTierOptions(items).map(o =>
+      `<option value="${o.value}" data-item="${o.itemId}" data-name="${o.itemName}" data-qty="${o.qty}" data-unit-price="${o.unitPrice}">${o.itemName}（庫存 ${o.stock}${o.unit}）— ${o.label} $${fmt.num(o.total)}</option>`
+    ).join("");
+  }
+
+  function lineRow(idx) {
+    return `
+      <div class="row-fields line-row" data-idx="${idx}" style="margin-bottom:8px;align-items:end">
+        <div class="field" style="margin-bottom:0"><label>品項（含售價組合）</label>
+          <select class="select sl-item" required><option value="">請選擇</option>${buildOpts()}</select>
+        </div>
+        <div class="field" style="margin-bottom:0"><label>數量</label>
+          <input class="input sl-qty" type="number" min="1" step="1" value="1" required></div>
+        <div class="field" style="margin-bottom:0"><label>單價</label>
+          <input class="input sl-price" type="number" min="0" step="0.01" required></div>
+        <div class="field" style="margin-bottom:0"><label>小計</label>
+          <input class="input sl-sub" readonly tabindex="-1"></div>
+        <div><button type="button" class="btn ghost icon-only sl-del" title="移除">✕</button></div>
+      </div>`;
+  }
+  function addLine() {
+    const idx = $lines.children.length;
+    $lines.insertAdjacentHTML("beforeend", lineRow(idx));
+    bindRow($lines.lastElementChild);
+    recalc();
+  }
+  function bindRow(row) {
+    const sl = row.querySelector(".sl-item");
+    const qty = row.querySelector(".sl-qty");
+    const price = row.querySelector(".sl-price");
+    sl.addEventListener("change", () => {
+      const opt = sl.selectedOptions[0];
+      // 選了某組合 → 自動帶入數量與單價（仍可手動修改）
+      if (opt?.dataset.qty)        qty.value   = opt.dataset.qty;
+      if (opt?.dataset.unitPrice)  price.value = opt.dataset.unitPrice;
+      recalc();
+    });
+    qty.addEventListener("input", recalc);
+    price.addEventListener("input", recalc);
+    row.querySelector(".sl-del").addEventListener("click", () => { row.remove(); recalc(); });
+  }
+  function recalc() {
+    let total = 0;
+    [...$lines.querySelectorAll(".line-row")].forEach(r => {
+      const q = Number(r.querySelector(".sl-qty").value)||0;
+      const p = Number(r.querySelector(".sl-price").value)||0;
+      r.querySelector(".sl-sub").value = (q*p).toLocaleString();
+      total += q*p;
+    });
+    document.getElementById("total").textContent = fmt.money(total);
+  }
+  document.getElementById("btnAddLine").addEventListener("click", addLine);
+  addLine();
+
+  $form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const lines = [...$lines.querySelectorAll(".line-row")].map(r => {
+      const sl = r.querySelector(".sl-item");
+      const opt = sl.selectedOptions[0];
+      return {
+        itemId: opt?.dataset.item || "",
+        name:   opt?.dataset.name || "",
+        qty:    Number(r.querySelector(".sl-qty").value)||0,
+        price:  Number(r.querySelector(".sl-price").value)||0
+      };
+    }).filter(l => l.itemId && l.qty > 0);
+    if (!lines.length) return toast("請至少加一個品項", "err");
+
+    try {
+      await addSale({
+        date: new Date(document.getElementById("fDate").value),
+        customer: document.getElementById("fCustomer").value,
+        note: document.getElementById("fNote").value,
+        lines
+      });
+      toast("✓ 銷貨單已儲存，庫存已扣除", "ok");
+      $form.reset();
+      document.getElementById("fDate").value = fmt.dateInput(new Date());
+      $lines.innerHTML = ""; addLine();
+      items = await listItems(); // 重抓庫存
+      reload();
+      loadStats();
+    } catch (err) {
+      console.error(err);
+      toast("儲存失敗：" + err.message, "err");
+    }
+  });
+
+  // 統計小卡
+  function loadStats() {
+    const today = new Date();
+    const inToday = (s) => {
+      const d = s.date.toDate ? s.date.toDate() : new Date(s.date);
+      return d.toDateString() === today.toDateString();
+    };
+    const inMonth = (s) => fmt.monthKey(s.date) === fmt.monthKey(today);
+    document.getElementById("vToday").textContent = fmt.money(salesCache.filter(inToday).reduce((a,b)=>a+b.total,0));
+    document.getElementById("vMonth").textContent = fmt.money(salesCache.filter(inMonth).reduce((a,b)=>a+b.total,0));
+  }
+
+  async function reload() {
+    salesCache = await listSales({ days: 30 });
+    render();
+    loadStats();
+  }
+  function render() {
+    const kw = $kw.value.trim();
+    let list = salesCache;
+    if (kw) list = list.filter(s => (s.customer||"").includes(kw)
+      || (s.lines||[]).some(l => (l.name||"").includes(kw)));
+    if (!list.length) {
+      $rows.innerHTML = `<tr><td colspan="7" class="empty">尚無銷貨紀錄</td></tr>`;
+      return;
+    }
+    $rows.innerHTML = list.map(s => `
+      <tr>
+        <td>${fmt.date(s.date)}</td>
+        <td class="muted">${s.id.slice(0,6)}</td>
+        <td>${s.customer || "—"}</td>
+        <td>${(s.lines||[]).map(l=>`${l.name}×${l.qty}`).join("、")}</td>
+        <td class="num"><b>${fmt.money(s.total)}</b></td>
+        <td>${s.createdByName || "—"}</td>
+        <td class="right">${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${s.id}" title="刪除（會反扣庫存）">🗑</button>` : ""}</td>
+      </tr>`).join("");
+  }
+  $kw.addEventListener("input", render);
+  $rows.addEventListener("click", async e => {
+    const id = e.target.closest("[data-del]")?.dataset.del;
+    if (id && confirm("刪除這筆銷貨單？庫存會自動加回去。")) {
+      try {
+        await deleteSale(id);
+        toast("已刪除", "ok");
+        items = await listItems();
+        reload();
+      } catch (err) { toast(err.message, "err"); }
+    }
+  });
+
+  reload();
+</script>
+</body>
+</html>
