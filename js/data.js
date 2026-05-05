@@ -387,6 +387,28 @@ export async function getShipment(id){
 }
 export async function deleteShipment(id){ await deleteDoc(doc(db, "shipments", id)); }
 
+// 更新出貨單（不影響庫存，純修文字/數量/客戶資訊）
+export async function updateShipment(id, ship) {
+  const ref = doc(db, "shipments", id);
+  const sSnap = await getDoc(ref);
+  if (!sSnap.exists()) throw new Error("找不到出貨單");
+  const old = sSnap.data();
+  const total = (ship.lines||[]).reduce((s,l)=>s + Number(l.qty)*Number(l.price), 0);
+  await updateDoc(ref, {
+    date: ship.date instanceof Date ? Timestamp.fromDate(ship.date) : ship.date,
+    recipient: ship.recipient || "",
+    phone: ship.phone || "",
+    address: ship.address || "",
+    handlerName: ship.handlerName || old.handlerName || me().name,
+    note: ship.note || "",
+    lines: ship.lines || [],
+    total,
+    updatedAt: serverTimestamp(),
+    updatedBy: me().email
+    // docNo / docDateKey / seq 維持原值，不重新編號
+  });
+}
+
 // ============ Batches (訂單批次) ============
 // 一個批次 = 同一天/同一車要送的多個客戶訂單
 // 流程：建批次 → 加入客戶訂單 → 看 SKU 匯總 → 一鍵確認出貨（自動建 sales + shipments、扣庫存）

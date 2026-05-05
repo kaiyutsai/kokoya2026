@@ -24,26 +24,39 @@
       max-width: none !important;
       page-break-inside: avoid;
     }
-    /* 多張一頁兩張模式 */
-    #bulkPrintArea .ship-doc {
+    /* 多張一頁兩張模式：用 ship-slot 包，固定高度，內部自動 scale to fit */
+    #bulkPrintArea .ship-slot {
       height: calc((297mm - 18mm) / 2);
-      padding: 10mm 12mm !important;
-      margin: 0 0 6mm 0 !important;
-      font-size: 9.5pt;
+      page-break-inside: avoid;
       overflow: hidden;
+      margin: 0 0 6mm 0;
+      position: relative;
+      box-sizing: border-box;
     }
-    #bulkPrintArea .ship-doc:nth-of-type(2n) {
+    #bulkPrintArea .ship-slot:nth-of-type(2n) {
       page-break-after: always;
-      margin-bottom: 0 !important;
+      margin-bottom: 0;
     }
-    #bulkPrintArea .ship-doc .head .title { font-size: 1.5rem !important; }
-    #bulkPrintArea .ship-doc .head img { height: 60px !important; }
-    #bulkPrintArea .ship-doc .watermark { width: 60% !important; }
-    #bulkPrintArea .ship-doc table th,
-    #bulkPrintArea .ship-doc table td { padding: 4px 6px !important; font-size: 9pt !important; }
-    #bulkPrintArea .ship-doc .thanks { margin-top: 10px !important; padding: 10px 8px 4px !important; }
-    #bulkPrintArea .ship-doc .thanks .msg { font-size: 1rem !important; }
-    #bulkPrintArea .ship-doc .qr-wrap img.qr { width: 60px !important; height: 60px !important; }
+    #bulkPrintArea .ship-doc {
+      margin: 0 !important;
+      width: 100%;
+      max-width: none !important;
+    }
+  }
+  /* 螢幕 + 列印 通用：2-up slot 容器 */
+  .ship-slot {
+    height: 520px;  /* 螢幕預設高度（接近 138mm at 96DPI） */
+    overflow: hidden;
+    margin-bottom: 14px;
+    border: 1px dashed #DDD;
+    background: #FFFBF2;
+    position: relative;
+    box-sizing: border-box;
+  }
+  .ship-slot .ship-doc {
+    transform-origin: top left;
+    margin: 0;
+    box-shadow: none;
   }
   /* QR + 感謝區雙欄 */
   .ship-doc .thanks-footer {
@@ -71,10 +84,15 @@
     <section class="card">
       <div class="card-h"><h2>🚚 開立出貨單</h2></div>
       <form id="form">
+        <div id="editIndicator" class="hidden" style="margin-bottom:10px;padding:8px 12px;background:#FFF6E6;border-left:3px solid var(--orange);border-radius:0 8px 8px 0;font-size:.9rem">
+          ✏️ 正在編輯：<b id="editTo"></b>（單號 <span id="editDocNo"></span>）
+          <button type="button" class="btn ghost" id="btnCancelEdit" style="margin-left:10px;padding:4px 10px;font-size:.78rem">取消編輯</button>
+        </div>
         <div class="row-fields">
           <div class="field"><label>出貨日期</label><input type="date" class="input" id="fDate" required></div>
-          <div class="field"><label>經辦人員</label><input class="input" id="fHandler"></div>
+          <div class="field"><label>經辦人員</label><input class="input" id="fHandler" list="dlHandler"></div>
         </div>
+        <datalist id="dlHandler"></datalist>
         <div class="row-fields">
           <div class="field"><label>收貨人 *</label><input class="input" id="fTo" required placeholder="例：王太太"></div>
           <div class="field"><label>聯絡電話</label><input class="input" id="fPhone" placeholder="0912-345-678"></div>
@@ -93,8 +111,8 @@
         </div>
 
         <div class="flex" style="justify-content:flex-end;margin-top:14px">
-          <button type="reset" class="btn ghost">清空</button>
-          <button type="submit" class="btn tomato">💾 建立並預覽列印</button>
+          <button type="reset" class="btn ghost" id="btnReset">清空</button>
+          <button type="submit" class="btn tomato" id="btnSubmit">💾 建立並預覽列印</button>
         </div>
       </form>
     </section>
@@ -139,7 +157,12 @@
 <!-- 多張一次列印區（A4 一頁兩張） -->
 <section id="bulkPrintArea" class="container hidden" style="padding-top:30px">
   <div class="no-print flex" style="justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
-    <span class="muted" id="bulkInfo">共 0 張 · A4 一頁兩張</span>
+    <div class="flex" style="gap:14px;flex-wrap:wrap">
+      <span class="muted" id="bulkInfo">共 0 張 · A4 一頁兩張</span>
+      <label class="flex" style="gap:6px;font-size:.92rem;cursor:pointer">
+        <input type="checkbox" id="bulkToggleNote" style="width:auto"> 顯示備註
+      </label>
+    </div>
     <div class="flex" style="gap:8px;flex-wrap:wrap">
       <button class="btn ghost" id="btnBulkBack">← 返回</button>
       <button class="btn primary" id="btnBulkPrint">🖨 列印 / 另存 PDF</button>
@@ -150,14 +173,20 @@
 
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
-  import { listItems, addShipment, listShipments, getShipment, deleteShipment } from "./js/data.js";
+  import { listItems, addShipment, listShipments, getShipment, deleteShipment, updateShipment } from "./js/data.js";
+  import { ALLOWED_USERS } from "./js/users.js";
 
   const me = await mountShell({ active: "shipping" });
   document.getElementById("fDate").value = fmt.dateInput(new Date());
   document.getElementById("fHandler").value = me.name;
 
+  // 經辦人 datalist 用家人姓名
+  document.getElementById("dlHandler").innerHTML =
+    Object.values(ALLOWED_USERS).map(u => `<option value="${u.name}">`).join("");
+
   let items = await listItems();
   let cache = [];
+  let editingId = null;
 
   const $lines = document.getElementById("lines");
   const $rows  = document.getElementById("rows");
@@ -222,22 +251,86 @@
     })).filter(l => l.itemId && l.qty > 0);
     if (!lines.length) return toast("請至少加一個品項", "err");
 
+    const payload = {
+      date: new Date(document.getElementById("fDate").value),
+      recipient: document.getElementById("fTo").value.trim(),
+      phone:     document.getElementById("fPhone").value.trim(),
+      address:   document.getElementById("fAddr").value.trim(),
+      handlerName: document.getElementById("fHandler").value.trim() || me.name,
+      note:      document.getElementById("fNote").value,
+      lines
+    };
+
     try {
-      const ship = {
-        date: new Date(document.getElementById("fDate").value),
-        recipient: document.getElementById("fTo").value.trim(),
-        phone:     document.getElementById("fPhone").value.trim(),
-        address:   document.getElementById("fAddr").value.trim(),
-        handlerName: document.getElementById("fHandler").value.trim() || me.name,
-        note:      document.getElementById("fNote").value,
-        lines
-      };
-      const { id, docNo } = await addShipment(ship);
-      toast(`✓ 出貨單 ${docNo} 已建立`, "ok");
+      let docId, docNoMsg;
+      if (editingId) {
+        await updateShipment(editingId, payload);
+        docId = editingId;
+        docNoMsg = "已更新";
+        toast(`✓ 出貨單 ${docNoMsg}`, "ok");
+      } else {
+        const r = await addShipment(payload);
+        docId = r.id;
+        docNoMsg = r.docNo;
+        toast(`✓ 出貨單 ${docNoMsg} 已建立`, "ok");
+      }
+      exitEditMode();
       reload();
-      previewDoc(id);
-    } catch (err) { console.error(err); toast("建立失敗：" + err.message, "err"); }
+      previewDoc(docId);
+    } catch (err) { console.error(err); toast((editingId ? "更新" : "建立") + "失敗：" + err.message, "err"); }
   });
+
+  // ----- 編輯模式 -----
+  function enterEditMode(s) {
+    editingId = s.id;
+    document.getElementById("fDate").value = fmt.dateInput(s.date);
+    document.getElementById("fHandler").value = s.handlerName || s.createdByName || me.name;
+    document.getElementById("fTo").value = s.recipient || "";
+    document.getElementById("fPhone").value = s.phone || "";
+    document.getElementById("fAddr").value = s.address || "";
+    document.getElementById("fNote").value = s.note || "";
+    // 重建 lines
+    $lines.innerHTML = "";
+    (s.lines || []).forEach(l => {
+      addLine();
+      const row = $lines.lastElementChild;
+      const sl = row.querySelector(".sl-item");
+      sl.value = l.itemId || "";
+      sl.dispatchEvent(new Event("change"));
+      // 覆蓋成儲存的值
+      row.querySelector(".sl-unit").value  = l.unit  || "";
+      row.querySelector(".sl-qty").value   = l.qty   || 1;
+      row.querySelector(".sl-price").value = l.price || 0;
+      row.querySelector(".sl-qty").dispatchEvent(new Event("input"));
+    });
+    if (!s.lines?.length) addLine();
+
+    document.getElementById("editIndicator").classList.remove("hidden");
+    document.getElementById("editTo").textContent = s.recipient || "(無收貨人)";
+    document.getElementById("editDocNo").textContent = s.docNo || "—";
+    document.getElementById("btnSubmit").textContent = "💾 儲存修改";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function exitEditMode() {
+    editingId = null;
+    document.getElementById("editIndicator").classList.add("hidden");
+    document.getElementById("btnSubmit").textContent = "💾 建立並預覽列印";
+  }
+
+  document.getElementById("btnCancelEdit").addEventListener("click", () => {
+    exitEditMode();
+    resetForm();
+  });
+  document.getElementById("btnReset").addEventListener("click", () => {
+    setTimeout(() => { resetForm(); exitEditMode(); }, 10);
+  });
+
+  function resetForm() {
+    document.getElementById("fDate").value = fmt.dateInput(new Date());
+    document.getElementById("fHandler").value = me.name;
+    $lines.innerHTML = ""; addLine();
+  }
 
   // 載入清單
   async function reload() {
@@ -261,6 +354,7 @@
         <td>${s.recipient || "—"}</td>
         <td class="num">${fmt.money(s.total)}</td>
         <td class="right flex" style="justify-content:flex-end;gap:4px">
+          <button class="btn ghost icon-only" data-edit="${s.id}" title="編輯改單">✎</button>
           <button class="btn ghost icon-only" data-view="${s.id}" title="預覽列印">🖨</button>
           ${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${s.id}" title="刪除">🗑</button>` : ""}
         </td>
@@ -284,10 +378,20 @@
   $rows.addEventListener("click", async (e) => {
     const view = e.target.closest("[data-view]")?.dataset.view;
     const del  = e.target.closest("[data-del]")?.dataset.del;
+    const edit = e.target.closest("[data-edit]")?.dataset.edit;
+    if (edit) {
+      const s = cache.find(x => x.id === edit);
+      if (s) enterEditMode(s); else toast("找不到該筆出貨單", "err");
+      return;
+    }
     if (view) previewDoc(view);
     if (del && confirm("確定刪除這筆出貨單？")) {
-      try { await deleteShipment(del); toast("已刪除", "ok"); reload(); }
-      catch (err){ toast(err.message, "err"); }
+      try {
+        await deleteShipment(del);
+        toast("已刪除", "ok");
+        if (editingId === del) exitEditMode();
+        reload();
+      } catch (err){ toast(err.message, "err"); }
     }
   });
 
@@ -410,7 +514,7 @@ ${docHTML}
             <div class="sub">SHIPPING NOTE</div>
           </div>
           <div style="text-align:right">
-            <img src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:90px" alt="果果家 KOKOYA">
+            <img class="head-logo" src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:180px" alt="果果家 KOKOYA">
           </div>
         </div>
 
@@ -468,6 +572,17 @@ ${docHTML}
 
   // ----- 多張一次列印 (A4 一頁兩張) -----
   const $bulk = document.getElementById("bulkPrintArea");
+  let bulkShipsCache = [];
+
+  // 切換備註 → 重新渲染 bulkDocs
+  document.getElementById("bulkToggleNote").addEventListener("change", () => {
+    if (!bulkShipsCache.length) return;
+    const includeNote = document.getElementById("bulkToggleNote").checked;
+    document.getElementById("bulkDocs").innerHTML = bulkShipsCache.map(s =>
+      `<div class="ship-slot">${renderShipDocHtml(s, includeNote)}</div>`
+    ).join("");
+    setTimeout(fitDocsToSlots, 200);
+  });
   document.getElementById("btnBulkPdf").addEventListener("click", async () => {
     const ids = [...document.querySelectorAll("[data-sel]:checked")].map(c => c.dataset.sel);
     if (!ids.length) return toast("請先勾選要下載的出貨單", "err");
@@ -477,13 +592,18 @@ ${docHTML}
     try {
       const ships = await Promise.all(ids.map(id => getShipment(id)));
       const valid = ships.filter(Boolean);
-      // 多張列印一律不顯示備註（保持簡潔）
-      document.getElementById("bulkDocs").innerHTML = valid.map(s => renderShipDocHtml(s, false)).join("");
+      bulkShipsCache = valid;
+      const includeNote = document.getElementById("bulkToggleNote").checked;
+      document.getElementById("bulkDocs").innerHTML = valid.map(s =>
+        `<div class="ship-slot">${renderShipDocHtml(s, includeNote)}</div>`
+      ).join("");
       document.getElementById("bulkInfo").textContent = `共 ${valid.length} 張 · A4 一頁兩張，按列印後在「目的地」選「另存為 PDF」`;
       $form.classList.add("hidden");
       $print.classList.add("hidden");
       $bulk.classList.remove("hidden");
       window.scrollTo(0, 0);
+      // 等 LOGO/QR 圖片載入後再縮放
+      setTimeout(fitDocsToSlots, 250);
     } catch (err) {
       console.error(err);
       toast("載入失敗：" + err.message, "err");
@@ -496,7 +616,40 @@ ${docHTML}
     $bulk.classList.add("hidden");
     $form.classList.remove("hidden");
   });
-  document.getElementById("btnBulkPrint").addEventListener("click", () => window.print());
+  document.getElementById("btnBulkPrint").addEventListener("click", () => {
+    fitDocsToSlots();      // 列印前再算一次（針對列印時不同的 mm 尺寸）
+    setTimeout(() => window.print(), 80);
+  });
+
+  // ✨ 把每個 .ship-doc 縮放到 .ship-slot 內，確保不被裁切
+  // 在螢幕和列印前都呼叫。列印時 slot 高度由 mm 決定，先用 px 量再 scale 也夠用
+  function fitDocsToSlots() {
+    document.querySelectorAll('#bulkPrintArea .ship-slot').forEach(slot => {
+      const doc = slot.querySelector('.ship-doc');
+      if (!doc) return;
+      // 重置
+      doc.style.transform = '';
+      doc.style.width = '';
+      // 量自然高度 / slot 內寬
+      const naturalH = doc.offsetHeight;
+      const slotH = slot.clientHeight;
+      const slotW = slot.clientWidth;
+      const naturalW = doc.offsetWidth;
+      // 取高度與寬度兩個比例的較小者
+      const scaleH = slotH / naturalH;
+      const scaleW = slotW / naturalW;
+      const scale = Math.min(1, scaleH, scaleW);
+      if (scale < 1) {
+        doc.style.transform = `scale(${scale})`;
+        doc.style.width = `${100 / scale}%`;
+      }
+    });
+  }
+  // 列印對話框開啟前，再算一次（瀏覽器這時用的是 mm 尺寸）
+  window.addEventListener('beforeprint', fitDocsToSlots);
+  window.addEventListener('resize', () => {
+    if (!$bulk.classList.contains('hidden')) fitDocsToSlots();
+  });
 
   reload();
 </script>
