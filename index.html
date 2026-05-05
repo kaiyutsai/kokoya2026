@@ -9,12 +9,39 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<style>
+  /* 登入頁專屬：用橫式 LOGO（KOKOYA_HOME）取代舊的圓形裁切版 */
+  .login-card .logo-wrap {
+    width: 280px;
+    height: 175px;
+    margin: 0 auto 18px;
+    border-radius: 28px;
+    overflow: hidden;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-md);
+    position: relative;
+  }
+  .login-card .logo-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    position: static;
+    left: auto;
+    top: auto;
+    display: block;
+  }
+  @media (max-width: 360px){
+    .login-card .logo-wrap { width: 240px; height: 150px; }
+  }
+</style>
 </head>
 <body>
 <div class="login-wrap">
   <div class="login-card">
     <div class="logo-wrap">
-      <img id="logoImg" src="assets/logo.png" alt="果果家"
+      <img id="logoImg" src="assets/logo-home.png" alt="果果家"
            onerror="this.onerror=null;this.src='assets/logo-fallback.svg';">
     </div>
     <h1>果果家</h1>

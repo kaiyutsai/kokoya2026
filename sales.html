@@ -10,50 +10,35 @@
 </head>
 <body>
 <main class="container">
-  <div class="grid cols-2">
-    <!-- 新增銷貨 -->
-    <section class="card">
-      <div class="card-h"><h2>🛒 新增銷貨單</h2></div>
-      <form id="form">
-        <div class="row-fields">
-          <div class="field"><label>銷售日期</label><input type="date" class="input" id="fDate" required></div>
-          <div class="field"><label>客人 / 對象</label><input class="input" id="fCustomer" placeholder="例：王太太、現場客人"></div>
-        </div>
-
-        <h3 style="margin-top:6px">品項明細</h3>
-        <div id="lines"></div>
-        <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
-
-        <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：宅配、自取、付現…"></textarea></div>
-
-        <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
-          <div class="muted">合計</div>
-          <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="total">$0</div>
-        </div>
-
-        <div class="flex" style="justify-content:flex-end;margin-top:14px">
-          <button type="reset" class="btn ghost">清空</button>
-          <button type="submit" class="btn primary">💾 儲存銷貨單</button>
-        </div>
-      </form>
-    </section>
-
-    <!-- 統計小卡 -->
-    <section>
-      <div class="grid cols-2">
-        <div class="stat accent-orange"><div class="label">今日銷售</div><div class="value" id="vToday">—</div></div>
-        <div class="stat accent-tomato"><div class="label">本月銷售</div><div class="value" id="vMonth">—</div></div>
+  <section class="card">
+    <div class="card-h">
+      <h2>🛒 新增銷貨單
+        <button type="button" class="btn ghost icon-only" id="btnHelp" title="操作說明" style="margin-left:8px;font-size:1rem">❓</button>
+      </h2>
+    </div>
+    <form id="form">
+      <div class="row-fields">
+        <div class="field"><label>銷售日期</label><input type="date" class="input" id="fDate" required></div>
+        <div class="field"><label>客人 / 對象</label><input class="input" id="fCustomer" placeholder="例：王太太、現場客人"></div>
       </div>
-      <div class="card" style="margin-top:18px">
-        <div class="card-h"><h3>提示</h3></div>
-        <ul style="padding-left:18px;color:var(--ink-3);line-height:1.9">
-          <li>儲存銷貨單後，庫存會 <b>自動扣除</b></li>
-          <li>單價會自動帶入「品項主檔」的建議售價，可現場修改</li>
-          <li>若品項不在清單，請先到「庫存／品項」新增</li>
-        </ul>
+
+      <h3 style="margin-top:6px">品項明細</h3>
+      <div id="lines"></div>
+      <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+      <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：宅配、自取、付現…"></textarea></div>
+
+      <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
+        <div class="muted">合計</div>
+        <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="total">$0</div>
       </div>
-    </section>
-  </div>
+
+      <div class="flex" style="justify-content:flex-end;margin-top:14px">
+        <button type="reset" class="btn ghost">清空</button>
+        <button type="submit" class="btn primary">💾 儲存銷貨單</button>
+      </div>
+    </form>
+  </section>
 
   <section class="card" style="margin-top:18px">
     <div class="card-h">
@@ -71,6 +56,24 @@
   </section>
 </main>
 
+<!-- 操作說明 modal -->
+<div class="modal-mask" id="helpModal">
+  <div class="modal">
+    <div class="card-h"><h2>📘 銷貨單操作說明</h2></div>
+    <ul style="padding-left:20px;color:var(--ink-2);line-height:1.95;margin:0 0 14px">
+      <li><b>1. 先選品項</b>：下拉只列品名與庫存</li>
+      <li><b>2. 再選銷售方式</b>：跳出該品項的售價組合（如「單顆 $25」、「4顆組 $100」、「7顆組 $200」）</li>
+      <li>選了銷售方式後，<b>數量與單價自動帶入</b>，仍可手動改</li>
+      <li>儲存後庫存 <b>自動扣除</b></li>
+      <li>沒看到的品項、或想加新的售價組合 → 去「🍎 品項清單」新增</li>
+      <li>當日/本月統計請看「📊 報表」頁</li>
+    </ul>
+    <div class="flex" style="justify-content:flex-end">
+      <button type="button" class="btn primary" id="btnHelpClose">了解</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
   import { listItems, addSale, listSales, deleteSale, buildItemTierOptions } from "./js/data.js";
@@ -85,17 +88,20 @@
   let items = await listItems();
   let salesCache = [];
 
-  function buildOpts() {
-    return buildItemTierOptions(items).map(o =>
-      `<option value="${o.value}" data-item="${o.itemId}" data-name="${o.itemName}" data-qty="${o.qty}" data-unit-price="${o.unitPrice}">${o.itemName}（庫存 ${o.stock}${o.unit}）— ${o.label} $${fmt.num(o.total)}</option>`
+  function buildItemOptionsHTML() {
+    return items.map(i =>
+      `<option value="${i.id}" data-name="${i.name}" data-unit="${i.unit||''}">${i.name}（庫存 ${i.stock||0}${i.unit||''}）</option>`
     ).join("");
   }
 
   function lineRow(idx) {
     return `
       <div class="row-fields line-row" data-idx="${idx}" style="margin-bottom:8px;align-items:end">
-        <div class="field" style="margin-bottom:0"><label>品項（含售價組合）</label>
-          <select class="select sl-item" required><option value="">請選擇</option>${buildOpts()}</select>
+        <div class="field" style="margin-bottom:0"><label>1. 品項</label>
+          <select class="select sl-item" required><option value="">請選擇</option>${buildItemOptionsHTML()}</select>
+        </div>
+        <div class="field" style="margin-bottom:0"><label>2. 銷售方式</label>
+          <select class="select sl-mode" required disabled><option value="">先選品項</option></select>
         </div>
         <div class="field" style="margin-bottom:0"><label>數量</label>
           <input class="input sl-qty" type="number" min="1" step="1" value="1" required></div>
@@ -113,16 +119,46 @@
     recalc();
   }
   function bindRow(row) {
-    const sl = row.querySelector(".sl-item");
+    const slItem = row.querySelector(".sl-item");
+    const slMode = row.querySelector(".sl-mode");
     const qty = row.querySelector(".sl-qty");
     const price = row.querySelector(".sl-price");
-    sl.addEventListener("change", () => {
-      const opt = sl.selectedOptions[0];
-      // 選了某組合 → 自動帶入數量與單價（仍可手動修改）
-      if (opt?.dataset.qty)        qty.value   = opt.dataset.qty;
-      if (opt?.dataset.unitPrice)  price.value = opt.dataset.unitPrice;
+
+    // 選品項 → 重建「銷售方式」下拉
+    slItem.addEventListener("change", () => {
+      const itemId = slItem.value;
+      if (!itemId) {
+        slMode.innerHTML = `<option value="">先選品項</option>`;
+        slMode.disabled = true;
+        qty.value = 1;
+        price.value = "";
+        recalc();
+        return;
+      }
+      const item = items.find(i => i.id === itemId);
+      if (!item) return;
+      const tiers = buildItemTierOptions([item]);
+      slMode.innerHTML = `<option value="">請選擇</option>` + tiers.map(t =>
+        `<option value="${t.value}" data-qty="${t.qty}" data-unit-price="${t.unitPrice}">${t.label}　$${fmt.num(t.total)}</option>`
+      ).join("");
+      slMode.disabled = false;
+      // 自動選第一個（單{單位} 或第一個 tier），符合 80% 用戶意圖
+      if (tiers.length) {
+        slMode.value = tiers[0].value;
+        qty.value   = tiers[0].qty;
+        price.value = tiers[0].unitPrice;
+      }
       recalc();
     });
+
+    // 改銷售方式 → 重新帶入數量+單價
+    slMode.addEventListener("change", () => {
+      const opt = slMode.selectedOptions[0];
+      if (opt?.dataset.qty)       qty.value   = opt.dataset.qty;
+      if (opt?.dataset.unitPrice) price.value = opt.dataset.unitPrice;
+      recalc();
+    });
+
     qty.addEventListener("input", recalc);
     price.addEventListener("input", recalc);
     row.querySelector(".sl-del").addEventListener("click", () => { row.remove(); recalc(); });
@@ -143,10 +179,10 @@
   $form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const lines = [...$lines.querySelectorAll(".line-row")].map(r => {
-      const sl = r.querySelector(".sl-item");
+      const sl  = r.querySelector(".sl-item");
       const opt = sl.selectedOptions[0];
       return {
-        itemId: opt?.dataset.item || "",
+        itemId: sl.value,
         name:   opt?.dataset.name || "",
         qty:    Number(r.querySelector(".sl-qty").value)||0,
         price:  Number(r.querySelector(".sl-price").value)||0
@@ -167,29 +203,15 @@
       $lines.innerHTML = ""; addLine();
       items = await listItems(); // 重抓庫存
       reload();
-      loadStats();
     } catch (err) {
       console.error(err);
       toast("儲存失敗：" + err.message, "err");
     }
   });
 
-  // 統計小卡
-  function loadStats() {
-    const today = new Date();
-    const inToday = (s) => {
-      const d = s.date.toDate ? s.date.toDate() : new Date(s.date);
-      return d.toDateString() === today.toDateString();
-    };
-    const inMonth = (s) => fmt.monthKey(s.date) === fmt.monthKey(today);
-    document.getElementById("vToday").textContent = fmt.money(salesCache.filter(inToday).reduce((a,b)=>a+b.total,0));
-    document.getElementById("vMonth").textContent = fmt.money(salesCache.filter(inMonth).reduce((a,b)=>a+b.total,0));
-  }
-
   async function reload() {
     salesCache = await listSales({ days: 30 });
     render();
-    loadStats();
   }
   function render() {
     const kw = $kw.value.trim();
@@ -223,6 +245,12 @@
       } catch (err) { toast(err.message, "err"); }
     }
   });
+
+  // 操作說明 modal
+  const $helpModal = document.getElementById("helpModal");
+  document.getElementById("btnHelp").addEventListener("click", () => $helpModal.classList.add("show"));
+  document.getElementById("btnHelpClose").addEventListener("click", () => $helpModal.classList.remove("show"));
+  $helpModal.addEventListener("click", e => { if (e.target === $helpModal) $helpModal.classList.remove("show"); });
 
   reload();
 </script>

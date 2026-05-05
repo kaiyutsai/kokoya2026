@@ -10,51 +10,35 @@
 </head>
 <body>
 <main class="container">
-  <div class="grid cols-2">
-    <section class="card">
-      <div class="card-h"><h2>📦 新增進貨單</h2></div>
-      <form id="form">
-        <div class="row-fields">
-          <div class="field"><label>進貨日期</label><input type="date" class="input" id="fDate" required></div>
-          <div class="field"><label>供應商</label><input class="input" id="fSupplier" list="dlSupplier" placeholder="例：崑山水果（從清單選或手動輸入）"></div>
-        </div>
-
-        <h3 style="margin-top:6px">品項明細</h3>
-        <div id="lines"></div>
-        <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
-
-        <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：分兩車到貨、車資另計…"></textarea></div>
-
-        <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
-          <div class="muted">總成本</div>
-          <div style="font-size:1.4rem;font-weight:700;color:var(--leaf-deep)" id="total">$0</div>
-        </div>
-
-        <div class="flex" style="justify-content:flex-end;margin-top:14px">
-          <button type="reset" class="btn ghost">清空</button>
-          <button type="submit" class="btn leaf">💾 儲存進貨單</button>
-        </div>
-      </form>
-    </section>
-
-    <section>
-      <div class="grid cols-2">
-        <div class="stat accent-leaf"><div class="label">本月進貨</div><div class="value" id="vMonth">—</div></div>
-        <div class="stat accent-orange"><div class="label">近 7 天進貨</div><div class="value" id="vWeek">—</div></div>
+  <section class="card">
+    <div class="card-h">
+      <h2>📦 新增進貨單
+        <button type="button" class="btn ghost icon-only" id="btnHelp" title="操作說明" style="margin-left:8px;font-size:1rem">❓</button>
+      </h2>
+    </div>
+    <form id="form">
+      <div class="row-fields">
+        <div class="field"><label>進貨日期</label><input type="date" class="input" id="fDate" required></div>
+        <div class="field"><label>供應商</label><input class="input" id="fSupplier" list="dlSupplier" placeholder="例：崑山水果（從清單選或手動輸入）"></div>
       </div>
-      <div class="card" style="margin-top:18px">
-        <div class="card-h"><h3>使用說明</h3></div>
-        <ul style="padding-left:18px;color:var(--ink-3);line-height:1.9;font-size:.92rem">
-          <li><b>整箱進貨</b>（推薦給蘋果、橘子等論箱買的水果）：
-            <br>填「箱數 × 每箱顆數 × 每箱單價」，系統自動換算成顆，
-            <br>每箱顆數隨批次不同（80 / 60 / 32 都可），現場填即可</li>
-          <li><b>散裝進貨</b>：草莓論盒、香蕉論斤等，直接輸入「顆數 × 單價」</li>
-          <li>儲存後 <b>自動加入庫存</b>（以基本單位顆/斤儲存）</li>
-          <li>使用 <b>加權平均成本</b> 計算每顆成本，用於毛利分析</li>
-        </ul>
+
+      <h3 style="margin-top:6px">品項明細</h3>
+      <div id="lines"></div>
+      <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+      <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：分兩車到貨、車資另計…"></textarea></div>
+
+      <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
+        <div class="muted">總成本</div>
+        <div style="font-size:1.4rem;font-weight:700;color:var(--leaf-deep)" id="total">$0</div>
       </div>
-    </section>
-  </div>
+
+      <div class="flex" style="justify-content:flex-end;margin-top:14px">
+        <button type="reset" class="btn ghost">清空</button>
+        <button type="submit" class="btn leaf">💾 儲存進貨單</button>
+      </div>
+    </form>
+  </section>
 
   <section class="card" style="margin-top:18px">
     <div class="card-h"><h2>📒 近 30 天進貨</h2>
@@ -70,6 +54,25 @@
 
   <datalist id="dlSupplier"></datalist>
 </main>
+
+<!-- 操作說明 modal -->
+<div class="modal-mask" id="helpModal">
+  <div class="modal">
+    <div class="card-h"><h2>📘 進貨單操作說明</h2></div>
+    <ul style="padding-left:20px;color:var(--ink-2);line-height:1.95;margin:0 0 14px;font-size:.95rem">
+      <li><b>整箱進貨（推薦）</b>：適合蘋果、橘子等論箱買的水果。
+        <br>填「箱數 × 每箱顆數 × 每箱單價」，系統自動換算成「顆」儲存。
+        <br>每箱顆數隨批次不同（80 / 60 / 32 都可），現場看實際填即可。</li>
+      <li><b>散裝進貨</b>：草莓論盒、香蕉論斤等，直接輸入「數量 × 單價」</li>
+      <li>儲存後庫存 <b>自動加入</b>（以基本單位顆/斤儲存）</li>
+      <li>系統用 <b>加權平均成本</b> 重算每單位成本，用於毛利分析</li>
+      <li>本月/近 7 天進貨統計請看「📊 報表」頁</li>
+    </ul>
+    <div class="flex" style="justify-content:flex-end">
+      <button type="button" class="btn primary" id="btnHelpClose">了解</button>
+    </div>
+  </div>
+</div>
 
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
@@ -270,18 +273,9 @@
     } catch (err) { console.error(err); toast("儲存失敗：" + err.message, "err"); }
   });
 
-  function loadStats() {
-    const today = new Date();
-    const inMonth = p => fmt.monthKey(p.date) === fmt.monthKey(today);
-    const wkAgo = new Date(); wkAgo.setDate(wkAgo.getDate() - 7);
-    const inWeek = p => (p.date.toDate ? p.date.toDate() : new Date(p.date)) >= wkAgo;
-    document.getElementById("vMonth").textContent = fmt.money(cache.filter(inMonth).reduce((a,b)=>a+b.total,0));
-    document.getElementById("vWeek").textContent  = fmt.money(cache.filter(inWeek).reduce((a,b)=>a+b.total,0));
-  }
   async function reload() {
     cache = await listPurchases({ days: 30 });
     render();
-    loadStats();
   }
   function render() {
     const kw = $kw.value.trim();
@@ -316,6 +310,12 @@
       catch (err) { toast(err.message, "err"); }
     }
   });
+
+  // 操作說明 modal
+  const $helpModal = document.getElementById("helpModal");
+  document.getElementById("btnHelp").addEventListener("click", () => $helpModal.classList.add("show"));
+  document.getElementById("btnHelpClose").addEventListener("click", () => $helpModal.classList.remove("show"));
+  $helpModal.addEventListener("click", e => { if (e.target === $helpModal) $helpModal.classList.remove("show"); });
 
   reload();
 </script>

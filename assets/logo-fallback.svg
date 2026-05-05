@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <style>
+      .ln  { stroke: #6B4226; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+      .lnt { stroke: #6B4226; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+      .leaf-fill   { fill: #A8B89E; }
+      .orange-fill { fill: #E8A87C; }
+      .tomato-fill { fill: #C97B63; }
+      .cream-fill  { fill: #FAF6EE; }
+    </style>
+  </defs>
+  <!-- 圓形紙感底 -->
+  <circle cx="100" cy="100" r="98" class="cream-fill"/>
+  <!-- 頭巾 + 葉子 -->
+  <path class="ln" d="M 60 70 Q 100 42 140 70 Q 132 56 100 52 Q 68 56 60 70 Z" />
+  <path class="leaf-fill" d="M 138 58 Q 156 48 158 62 Q 150 70 138 62 Z" />
+  <path class="lnt" d="M 138 58 Q 156 48 158 62 Q 150 70 138 62 Z" />
+  <!-- 頭 -->
+  <path class="ln" d="M 66 80 Q 60 110 72 132 Q 86 148 100 148 Q 114 148 128 132 Q 140 110 134 80" />
+  <!-- 兩側頭髮 -->
+  <path class="lnt" d="M 68 105 Q 58 128 66 144" />
+  <path class="lnt" d="M 132 105 Q 142 128 134 144" />
+  <!-- 眼睛 -->
+  <ellipse cx="86" cy="108" rx="2.6" ry="3.2" fill="#4A3325"/>
+  <ellipse cx="114" cy="108" rx="2.6" ry="3.2" fill="#4A3325"/>
+  <!-- 腮紅 -->
+  <circle cx="76" cy="120" r="4.2" fill="#E8A87C" opacity=".75"/>
+  <circle cx="124" cy="120" r="4.2" fill="#E8A87C" opacity=".75"/>
+  <!-- 微笑 -->
+  <path class="lnt" d="M 92 124 Q 100 132 108 124" />
+  <!-- 圍裙領 -->
+  <path class="ln" d="M 86 148 L 92 162 L 108 162 L 114 148" />
+  <!-- 籃子 -->
+  <path class="ln" d="M 50 170 L 60 196 L 140 196 L 150 170 Z" />
+  <path class="lnt" d="M 50 170 L 150 170" />
+  <path class="lnt" d="M 70 174 L 74 196 M 88 174 L 90 196 M 112 174 L 110 196 M 130 174 L 126 196" />
+  <!-- 水果 -->
+  <circle cx="84" cy="166" r="13" class="orange-fill"/>
+  <path class="lnt" d="M 84 153 Q 86 156 88 153" />
+  <circle cx="116" cy="166" r="13" class="tomato-fill"/>
+  <path class="lnt" d="M 116 153 Q 118 156 120 153" />
+  <path class="leaf-fill" d="M 70 156 Q 62 150 72 148 Q 76 153 74 158 Z"/>
+</svg>
