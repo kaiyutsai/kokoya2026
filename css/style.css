@@ -483,3 +483,161 @@ table.tb .empty { text-align: center; color: var(--ink-3); padding: 30px; font-s
   margin: 0 auto;
 }
 @keyframes spin { to { transform: rotate(360deg) } }
+
+
+/* ===========================================================
+   📱 手機版優化（≤ 640px）
+   主要：壓縮 topbar、放大輸入框觸控區、卡片瘦身、modal 填滿
+   =========================================================== */
+@media (max-width: 640px) {
+
+  /* 內容容器收一點，內容區大一點 */
+  .container { padding: 14px 10px 50px; }
+
+  /* 標題稍微縮小 */
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: 1.1rem; }
+  h3 { font-size: .98rem; }
+
+  /* ===== Topbar ===== */
+  .topbar {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: nowrap;        /* 蓋掉 880px 的 wrap */
+  }
+  .topbar .brand {
+    flex-shrink: 0;
+    font-size: .95rem;
+    gap: 8px;
+  }
+  .topbar .brand-icon { width: 36px; height: 36px; }
+  .topbar .brand .muted { display: none; } /* 隱藏 KOKOYA 副標 */
+
+  .topbar nav {
+    margin-left: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    flex: 1;
+    scrollbar-width: none;
+  }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar nav a {
+    flex-shrink: 0;
+    padding: 7px 10px;
+    font-size: .85rem;
+    gap: 4px;
+  }
+
+  .topbar .user-chip {
+    flex-shrink: 0;
+    padding: 4px 6px 4px 4px;
+    font-size: .78rem;
+    gap: 6px;
+  }
+  .topbar .user-chip img { width: 28px; height: 28px; }
+  .topbar .user-chip > span:not(.role) { display: none; } /* 隱藏名字（role tag 留著） */
+  .topbar .user-chip .role { padding: 1px 7px; font-size: .68rem; }
+
+  /* ===== Cards / 區塊 ===== */
+  .card { padding: 14px; border-radius: 14px; }
+  .card-h { margin-bottom: 10px; }
+  .card-h h2, .card-h h3 { line-height: 1.3; }
+
+  /* ===== 輸入框：≥16px 防 iOS 自動縮放 + 適合觸控 ===== */
+  .input, .select, .textarea {
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+
+  /* ===== 按鈕：≥42px 觸控目標 ===== */
+  .btn {
+    padding: 11px 14px;
+    font-size: .92rem;
+  }
+  .btn.icon-only {
+    padding: 10px 12px;
+    min-width: 42px;
+    min-height: 42px;
+  }
+
+  /* ===== 表單格線 ===== */
+  .row-fields { grid-template-columns: 1fr; gap: 10px; }
+  .field { margin-bottom: 10px; }
+
+  /* ===== Modal：填滿螢幕 ===== */
+  .modal {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 92vh;
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  /* ===== 表格 ===== */
+  table.tb th, table.tb td {
+    padding: 7px 8px;
+    font-size: .85rem;
+  }
+  table.tb thead th { font-size: .74rem; letter-spacing: 0; }
+
+  /* 表格內 icon 按鈕集中 */
+  table.tb td .btn.icon-only {
+    padding: 6px 8px;
+    min-width: 34px; min-height: 34px;
+  }
+
+  /* ===== Stat 統計卡 ===== */
+  .stat { padding: 14px; }
+  .stat .value { font-size: 1.4rem; }
+  .stat .label { font-size: .8rem; }
+
+  /* ===== Toast 在手機上稍微靠中 ===== */
+  .toast-area {
+    right: 10px; left: 10px; bottom: 14px;
+    align-items: center;
+  }
+  .toast { font-size: .88rem; padding: 9px 14px; }
+
+  /* ===== 訂單批次：客戶訂單 modal 的 5 欄列 → 改成兩段 ===== */
+  .ol-row {
+    grid-template-columns: 1fr 70px 90px 36px !important;
+    gap: 6px !important;
+  }
+  .ol-row .ol-item {
+    grid-column: 1 / -1;  /* 品項 select 獨佔一整列 */
+  }
+  .ol-row .ol-sub { display: none; } /* 小計可由 qty × price 心算，省空間 */
+
+  /* ===== 品項清單 tier-row ===== */
+  .tier-row {
+    grid-template-columns: 1fr 70px 30px 90px 30px !important;
+    gap: 4px !important;
+  }
+  .tier-row .ti-label { grid-column: 1 / -1; }
+  .tier-row .ti-calc { font-size: .76rem; }
+
+  /* ===== 訂單批次卡片：手機改單欄 ===== */
+  .batch-grid { grid-template-columns: 1fr !important; }
+
+  /* ===== 出貨單列印模式 (.ship-doc) 手機預覽 ===== */
+  .ship-doc { padding: 18px; }
+  .ship-doc .meta { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ship-doc .signs { grid-template-columns: 1fr; gap: 16px; }
+
+  /* ===== 設定頁：lookup-pill ===== */
+  .lookup-pill { font-size: .85rem; padding: 5px 8px 5px 12px; }
+
+  /* ===== 登入頁稍縮 ===== */
+  .login-card { padding: 32px 22px 26px; }
+  .login-card h1 { font-size: 1.4rem; }
+}
+
+/* 超小螢幕 (≤380px) 額外緊縮 */
+@media (max-width: 380px) {
+  .topbar nav a span:nth-child(2) { display: none; }  /* nav 只剩 icon */
+  .topbar nav a { padding: 8px 10px; }
+  .container { padding: 10px 8px 50px; }
+  .card { padding: 12px; }
+}
