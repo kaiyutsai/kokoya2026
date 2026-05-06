@@ -40,14 +40,24 @@
   </section>
 
   <section class="card" style="margin-top:18px">
-    <div class="card-h"><h2>快速操作</h2></div>
-    <div class="flex flex-wrap gap-sm">
-      <a href="batches.html"   class="btn primary">📋 訂單批次（推薦）</a>
-      <a href="sales.html"     class="btn">🛒 新增銷貨</a>
-      <a href="purchase.html"  class="btn leaf">📦 新增進貨</a>
-      <a href="items.html"     class="btn">🍎 品項清單</a>
-      <a href="shipping.html"  class="btn tomato">🚚 開立出貨單</a>
-      <a href="reports.html"   class="btn">📊 查看報表</a>
+    <div class="card-h">
+      <h2>📦 庫存清單</h2>
+      <a href="items.html" class="muted">前往管理 →</a>
+    </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead>
+          <tr>
+            <th>品項</th>
+            <th>單位</th>
+            <th class="num">建議售價</th>
+            <th class="num">平均成本</th>
+            <th class="num">目前庫存</th>
+            <th>狀態</th>
+          </tr>
+        </thead>
+        <tbody id="invList"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
+      </table>
     </div>
   </section>
 </main>
@@ -130,6 +140,34 @@
             <td>${n}</td><td class="num">${fmt.num(q)} 份</td></tr>`).join("")}
        </tbody></table>`
     : `<p class="muted center">本月尚無銷售紀錄</p>`;
+
+  // ---- 庫存清單（含售完，按狀態排序：低庫存 → 充足 → 售完） ----
+  const sortedItems = [...items].sort((a, b) => {
+    const aS = Number(a.stock||0), bS = Number(b.stock||0);
+    const aLow = aS > 0 && aS <= Number(a.lowStock ?? 5);
+    const bLow = bS > 0 && bS <= Number(b.lowStock ?? 5);
+    const score = (s, low) => s <= 0 ? 2 : low ? 0 : 1;  // 0:低 1:充足 2:售完
+    const diff = score(aS, aLow) - score(bS, bLow);
+    if (diff !== 0) return diff;
+    return (a.name||"").localeCompare(b.name||"", "zh-Hant");
+  });
+  document.getElementById("invList").innerHTML = sortedItems.length
+    ? sortedItems.map(i => {
+        const stock = Number(i.stock||0);
+        const low = Number(i.lowStock ?? 5);
+        const status = stock <= 0 ? `<span class="tag out">售完</span>`
+                     : stock <= low ? `<span class="tag warn">低庫存</span>`
+                     : `<span class="tag ok">充足</span>`;
+        return `<tr>
+          <td><b>${i.name||""}</b>${i.category?` <span class="muted">· ${i.category}</span>`:""}</td>
+          <td>${i.unit||"—"}</td>
+          <td class="num">${i.price ? fmt.money(i.price) : "—"}</td>
+          <td class="num">${i.avgCost ? fmt.money(Math.round(i.avgCost*100)/100) : "—"}</td>
+          <td class="num"><b>${fmt.num(stock)}</b> ${i.unit||""}</td>
+          <td>${status}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="6" class="empty">尚無品項，去「品項清單」新增</td></tr>`;
 
   // ---- 最近銷貨 ----
   const recent = sales.slice(0, 6);
