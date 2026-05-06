@@ -52,11 +52,11 @@
   </section>
 
   <section class="card" style="margin-top:18px">
-    <div class="card-h"><h3>員工銷售統計</h3></div>
+    <div class="card-h"><h3>經辦人銷售統計</h3></div>
     <div class="table-wrap">
       <table class="tb">
-        <thead><tr><th>經辦人員</th><th class="num">單數</th><th class="num">營收</th><th class="num">平均單金額</th></tr></thead>
-        <tbody id="byUser"><tr><td colspan="4" class="empty">—</td></tr></tbody>
+        <thead><tr><th>經辦人</th><th class="num">單數</th><th class="num">營收</th><th class="num">毛利</th><th class="num">平均單金額</th></tr></thead>
+        <tbody id="byUser"><tr><td colspan="5" class="empty">—</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -65,7 +65,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script type="module">
   import { mountShell, fmt } from "./js/app-shell.js";
-  import { listSales, listPurchases } from "./js/data.js";
+  import { listSales, listPurchases, listItems } from "./js/data.js";
 
   await mountShell({ active: "reports" });
 
@@ -73,16 +73,30 @@
 
   let chDaily, chPie;
 
+  // 用當下 items.avgCost 重算成本（避免「銷貨當下 avgCost=0」的歷史失真）
+  // 若品項已刪除或 avgCost=0 → fallback 用 sale 存的 unitCost
+  function computeLineCost(l, itemMap) {
+    const item = itemMap[l.itemId];
+    const currentAvg = item ? Number(item.avgCost) || 0 : 0;
+    const savedUnit  = Number(l.unitCost) || 0;
+    const unit = currentAvg > 0 ? currentAvg : savedUnit;
+    return Number(l.qty) * unit;
+  }
+  function computeSaleCost(s, itemMap) {
+    return (s.lines||[]).reduce((tot, l) => tot + computeLineCost(l, itemMap), 0);
+  }
+
   async function load() {
     const days = Number(document.getElementById("range").value);
-    const [sales, purchases] = await Promise.all([
-      listSales({ days }), listPurchases({ days })
+    const [sales, purchases, items] = await Promise.all([
+      listSales({ days }), listPurchases({ days }), listItems()
     ]);
+    const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
 
-    // KPI
-    const rev = sales.reduce((a,b)=>a+(b.total||0), 0);
-    const profit = sales.reduce((a,b)=>a+(b.profit||0), 0);
-    const cost = rev - profit;
+    // KPI（成本/毛利 用現在 avgCost 重算，比較準）
+    const rev    = sales.reduce((a,b)=>a+(b.total||0), 0);
+    const cost   = sales.reduce((a,b)=>a+computeSaleCost(b, itemMap), 0);
+    const profit = rev - cost;
     document.getElementById("vRev").textContent    = fmt.money(rev);
     document.getElementById("vCost").textContent   = fmt.money(cost);
     document.getElementById("vProfit").textContent = fmt.money(profit);
@@ -100,7 +114,7 @@
         return sd.toDateString() === d.toDateString();
       });
       rArr.push(todays.reduce((a,b)=>a+b.total,0));
-      pArr.push(todays.reduce((a,b)=>a+(b.profit||0),0));
+      pArr.push(todays.reduce((a,b)=>a + (b.total||0) - computeSaleCost(b, itemMap), 0));
     }
     if (chDaily) chDaily.destroy();
     chDaily = new Chart(document.getElementById("chDaily"), {
@@ -119,14 +133,14 @@
       }
     });
 
-    // Pie / 品項排行
+    // Pie / 品項排行（成本同樣用現在 avgCost 重算）
     const itemAgg = {};
     sales.forEach(s => (s.lines||[]).forEach(l => {
       const k = l.name || "未知";
       if (!itemAgg[k]) itemAgg[k] = { qty:0, rev:0, cost:0 };
       itemAgg[k].qty  += Number(l.qty);
       itemAgg[k].rev  += Number(l.lineTotal || (l.qty*l.price)) || 0;
-      itemAgg[k].cost += Number(l.qty)*Number(l.unitCost||0);
+      itemAgg[k].cost += computeLineCost(l, itemMap);
     }));
     const sorted = Object.entries(itemAgg).sort((a,b)=>b[1].rev-a[1].rev);
 
@@ -155,13 +169,14 @@
         }).join("")
       : `<tr><td colspan="6" class="empty">無資料</td></tr>`;
 
-    // By user
+    // By 經辦人（優先用 handlerName，fallback 到舊資料的 createdByName）
     const userAgg = {};
     sales.forEach(s => {
-      const u = s.createdByName || "—";
-      if (!userAgg[u]) userAgg[u] = { cnt:0, rev:0 };
+      const u = s.handlerName || s.createdByName || "—";
+      if (!userAgg[u]) userAgg[u] = { cnt:0, rev:0, profit:0 };
       userAgg[u].cnt += 1;
       userAgg[u].rev += s.total || 0;
+      userAgg[u].profit += (s.total||0) - computeSaleCost(s, itemMap);
     });
     const userArr = Object.entries(userAgg).sort((a,b)=>b[1].rev-a[1].rev);
     document.getElementById("byUser").innerHTML = userArr.length
@@ -169,9 +184,10 @@
           <td>${u}</td>
           <td class="num">${v.cnt}</td>
           <td class="num">${fmt.money(v.rev)}</td>
+          <td class="num">${fmt.money(Math.round(v.profit))}</td>
           <td class="num">${fmt.money(Math.round(v.rev / v.cnt))}</td>
         </tr>`).join("")
-      : `<tr><td colspan="4" class="empty">無資料</td></tr>`;
+      : `<tr><td colspan="5" class="empty">無資料</td></tr>`;
   }
 
   document.getElementById("range").addEventListener("change", load);
