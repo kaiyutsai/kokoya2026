@@ -76,6 +76,20 @@
       </div>
     </div>
 
+    <!-- 經辦人 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>👤 經辦人</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        在「銷貨／進貨／出貨單」表單的「經辦人」下拉選單會出現這裡的選項。<br>
+        預設帶 4 位家人，可加入臨時幫手（例如阿嬤週末來幫忙）。
+      </p>
+      <div id="handlerList" class="lookup-list"></div>
+      <div class="row-fields" style="margin-top:14px">
+        <input class="input" id="newHandler" placeholder="例：凱宇">
+        <button class="btn primary" id="btnAddHandler" type="button">＋ 新增</button>
+      </div>
+    </div>
+
     <!-- 系統資料總覽 -->
     <div class="card" style="margin-top:14px">
       <div class="card-h">
@@ -117,12 +131,13 @@
     boot();
   }
 
-  let lookups = { suppliers: [], deliveryStaff: [] };
+  let lookups = { suppliers: [], deliveryStaff: [], handlers: [] };
 
   async function boot() {
     lookups = await getLookups();
     renderSuppliers();
     renderStaff();
+    renderHandlers();
     bindDataPanel();
   }
 
@@ -202,6 +217,34 @@
     if (e.key === "Enter") { e.preventDefault(); addStaff(); }
   });
 
+  // ---- 經辦人 ----
+  function renderHandlers() {
+    renderList("handlerList", lookups.handlers || [], async (i) => {
+      const name = lookups.handlers[i];
+      if (!confirm(`移除經辦人「${name}」？\n（不會影響已開的單子，只是新單下拉選不到）`)) return;
+      lookups.handlers.splice(i, 1);
+      renderHandlers();
+      await persist();
+      toast("已移除", "ok");
+    });
+  }
+  async function addHandler() {
+    const $input = document.getElementById("newHandler");
+    const v = $input.value.trim();
+    if (!v) return toast("請輸入名稱", "err");
+    lookups.handlers = lookups.handlers || [];
+    if (lookups.handlers.includes(v)) return toast("已存在相同名稱", "err");
+    lookups.handlers.push(v);
+    $input.value = "";
+    renderHandlers();
+    await persist();
+    toast("✓ 已新增", "ok");
+  }
+  document.getElementById("btnAddHandler").addEventListener("click", addHandler);
+  document.getElementById("newHandler").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addHandler(); }
+  });
+
   // ============ 系統資料總覽 + 危險區 ============
   const NAME_ZH = {
     items: "品項主檔",
@@ -261,6 +304,12 @@
                 <td>🚚 配送員</td>
                 <td class="num"><b>${(lookups.deliveryStaff||[]).length}</b></td>
                 <td><span class="muted">於上方「🚚 配送員」管理</span></td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>👤 經辦人</td>
+                <td class="num"><b>${(lookups.handlers||[]).length}</b></td>
+                <td><span class="muted">於上方「👤 經辦人」管理</span></td>
                 <td>—</td>
               </tr>
             </tbody>

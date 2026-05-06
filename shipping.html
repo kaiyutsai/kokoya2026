@@ -90,9 +90,8 @@
         </div>
         <div class="row-fields">
           <div class="field"><label>出貨日期</label><input type="date" class="input" id="fDate" required></div>
-          <div class="field"><label>經辦人員</label><input class="input" id="fHandler" list="dlHandler"></div>
+          <div class="field"><label>經辦人員</label><select class="select" id="fHandler"></select></div>
         </div>
-        <datalist id="dlHandler"></datalist>
         <div class="row-fields">
           <div class="field"><label>收貨人 *</label><input class="input" id="fTo" required placeholder="例：王太太"></div>
           <div class="field"><label>聯絡電話</label><input class="input" id="fPhone" placeholder="0912-345-678"></div>
@@ -173,16 +172,16 @@
 
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
-  import { listItems, addShipment, listShipments, getShipment, deleteShipment, updateShipment } from "./js/data.js";
-  import { ALLOWED_USERS } from "./js/users.js";
+  import { listItems, addShipment, listShipments, getShipment, deleteShipment, updateShipment, getLookups } from "./js/data.js";
 
   const me = await mountShell({ active: "shipping" });
   document.getElementById("fDate").value = fmt.dateInput(new Date());
-  document.getElementById("fHandler").value = me.name;
 
-  // 經辦人 datalist 用家人姓名
-  document.getElementById("dlHandler").innerHTML =
-    Object.values(ALLOWED_USERS).map(u => `<option value="${u.name}">`).join("");
+  // 經辦人 select 從 lookups 撈
+  const lookups = await getLookups().catch(() => ({ handlers: ["凱宇","凱帆","妍慧","于真"] }));
+  document.getElementById("fHandler").innerHTML =
+    (lookups.handlers || []).map(n => `<option value="${n}">${n}</option>`).join("");
+  document.getElementById("fHandler").value = (lookups.handlers||[]).includes(me.name) ? me.name : (lookups.handlers||[])[0] || "";
 
   let items = await listItems();
   let cache = [];

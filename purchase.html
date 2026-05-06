@@ -20,9 +20,8 @@
       <div class="row-fields">
         <div class="field"><label>進貨日期</label><input type="date" class="input" id="fDate" required></div>
         <div class="field"><label>供應商</label><input class="input" id="fSupplier" list="dlSupplier" placeholder="例：崑山水果（從清單選或手動輸入）"></div>
-        <div class="field"><label>經辦人</label><input class="input" id="fHandler" list="dlHandler" placeholder="預設為登入帳號"></div>
+        <div class="field"><label>經辦人</label><select class="select" id="fHandler"></select></div>
       </div>
-      <datalist id="dlHandler"></datalist>
       <div id="editIndicator" class="hidden" style="margin:6px 0 10px;padding:8px 12px;background:#FFF6E6;border-left:3px solid var(--orange);border-radius:0 8px 8px 0;font-size:.9rem">
         ✏️ 正在編輯：<b id="editSupplier"></b>
         <button type="button" class="btn ghost" id="btnCancelEdit" style="margin-left:10px;padding:4px 10px;font-size:.78rem">取消編輯</button>
@@ -85,7 +84,6 @@
   import {
     listItems, addPurchase, listPurchases, deletePurchase, updatePurchase, getLookups
   } from "./js/data.js";
-  import { ALLOWED_USERS } from "./js/users.js";
 
   const me = await mountShell({ active: "purchase" });
   const $lines = document.getElementById("lines");
@@ -93,22 +91,18 @@
   const $rows  = document.getElementById("rows");
   const $kw    = document.getElementById("kw");
   document.getElementById("fDate").value = fmt.dateInput(new Date());
-  document.getElementById("fHandler").value = me.name;
-
-  // 帶入家人姓名到「經辦人」datalist
-  document.getElementById("dlHandler").innerHTML =
-    Object.values(ALLOWED_USERS).map(u => `<option value="${u.name}">`).join("");
 
   let items = await listItems();
   let cache = [];
   let editingId = null;
-  let lookups = { suppliers: [], deliveryStaff: [] };
-  // 載入供應商清單到 datalist
-  getLookups().then(l => {
-    lookups = l;
-    document.getElementById("dlSupplier").innerHTML =
-      (lookups.suppliers || []).map(s => `<option value="${s}">`).join("");
-  }).catch(() => {});
+  let lookups = await getLookups().catch(() => ({ suppliers: [], handlers: ["凱宇","凱帆","妍慧","于真"] }));
+
+  // 供應商 datalist + 經辦人 select
+  document.getElementById("dlSupplier").innerHTML =
+    (lookups.suppliers || []).map(s => `<option value="${s}">`).join("");
+  document.getElementById("fHandler").innerHTML =
+    (lookups.handlers || []).map(n => `<option value="${n}">${n}</option>`).join("");
+  document.getElementById("fHandler").value = (lookups.handlers||[]).includes(me.name) ? me.name : (lookups.handlers||[])[0] || "";
 
   function lineRow() {
     const opts = items.map(i => `

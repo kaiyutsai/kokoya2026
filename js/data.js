@@ -603,18 +603,30 @@ export async function confirmBatch(id) {
 // ============ Settings / Lookups (共用下拉資料) ============
 // 單一文件 settings/lookups，含 suppliers / deliveryStaff 等陣列
 const LOOKUPS_REF = () => doc(db, "settings", "lookups");
-const DEFAULT_LOOKUPS = { suppliers: [], deliveryStaff: [] };
+// 預設名單（首次讀取或未設定時 fallback）
+const DEFAULT_LOOKUPS = {
+  suppliers: [],
+  deliveryStaff: [],
+  handlers: ["凱宇", "凱帆", "妍慧", "于真"]
+};
 
 export async function getLookups() {
   const s = await getDoc(LOOKUPS_REF());
   if (!s.exists()) return { ...DEFAULT_LOOKUPS };
-  return { ...DEFAULT_LOOKUPS, ...s.data() };
+  const data = s.data();
+  // 個別欄位若沒設或空 → fallback 到預設
+  return {
+    suppliers:     Array.isArray(data.suppliers)     ? data.suppliers     : DEFAULT_LOOKUPS.suppliers,
+    deliveryStaff: Array.isArray(data.deliveryStaff) ? data.deliveryStaff : DEFAULT_LOOKUPS.deliveryStaff,
+    handlers:      (Array.isArray(data.handlers) && data.handlers.length) ? data.handlers : DEFAULT_LOOKUPS.handlers
+  };
 }
 
 export async function saveLookups(data) {
   await setDoc(LOOKUPS_REF(), {
-    suppliers: Array.isArray(data.suppliers) ? data.suppliers : [],
+    suppliers:     Array.isArray(data.suppliers)     ? data.suppliers     : [],
     deliveryStaff: Array.isArray(data.deliveryStaff) ? data.deliveryStaff : [],
+    handlers:      Array.isArray(data.handlers)      ? data.handlers      : [],
     updatedAt: serverTimestamp(),
     updatedBy: me().email
   }, { merge: true });
