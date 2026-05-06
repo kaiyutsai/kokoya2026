@@ -76,6 +76,26 @@
       </div>
     </div>
 
+    <!-- API 金鑰 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>🔑 API 金鑰</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        Gemini AI 解析訂單用的金鑰。<b>存在 Firestore 加密保護</b>，只有登入後的家人能讀取，不會出現在公開的 GitHub repo。<br>
+        到 <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--orange-deep)">Google AI Studio</a> 申請新金鑰，貼到下面儲存即可。
+      </p>
+      <div class="row-fields">
+        <div class="field" style="grid-column: 1 / -1">
+          <label>Gemini API 金鑰</label>
+          <div class="flex" style="gap:6px">
+            <input class="input" id="apiKeyInput" type="password" placeholder="AIzaSy... (貼在這裡)" style="flex:1">
+            <button class="btn ghost" type="button" id="btnToggleKey" title="顯示/隱藏">👁</button>
+            <button class="btn primary" type="button" id="btnSaveKey">💾 儲存</button>
+          </div>
+          <div id="keyStatus" class="muted" style="font-size:.85rem;margin-top:8px;line-height:1.5"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- 經辦人 -->
     <div class="card" style="margin-top:14px">
       <div class="card-h"><h2>👤 經辦人</h2></div>
@@ -120,7 +140,9 @@
 
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
-  import { getLookups, saveLookups, getDataStats, clearCollection, resetTransactionsAndStock } from "./js/data.js";
+  import { getLookups, saveLookups, getDataStats, clearCollection, resetTransactionsAndStock,
+           getSecrets, saveSecrets } from "./js/data.js";
+  import { clearApiKeyCache } from "./js/ai-parse.js";
 
   const me = await mountShell({ active: "settings" });
 
@@ -139,6 +161,8 @@
     renderStaff();
     renderHandlers();
     bindDataPanel();
+    bindApiKeyPanel();
+    loadApiKey();
   }
 
   function renderList(elId, arr, onRemove) {
@@ -244,6 +268,53 @@
   document.getElementById("newHandler").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); addHandler(); }
   });
+
+  // ============ API 金鑰 ============
+  function maskKey(k) {
+    if (!k) return "";
+    if (k.length < 12) return "****";
+    return k.slice(0, 8) + " **** **** **** " + k.slice(-4);
+  }
+  async function loadApiKey() {
+    const $input = document.getElementById("apiKeyInput");
+    const $status = document.getElementById("keyStatus");
+    try {
+      const s = await getSecrets();
+      if (s.geminiApiKey) {
+        $input.value = s.geminiApiKey;
+        $status.innerHTML = `✓ 已設定（顯示為密碼模式，按 👁 可看明文）<br>目前金鑰：<code>${maskKey(s.geminiApiKey)}</code>`;
+        $status.style.color = "var(--leaf-deep)";
+      } else {
+        $input.value = "";
+        $status.innerHTML = `⚠️ 尚未設定 — AI 訂單解析無法使用，請貼上金鑰並儲存`;
+        $status.style.color = "var(--tomato)";
+      }
+    } catch (err) {
+      $status.innerHTML = `讀取失敗：${err.message}`;
+      $status.style.color = "var(--tomato)";
+    }
+  }
+  function bindApiKeyPanel() {
+    document.getElementById("btnToggleKey").addEventListener("click", () => {
+      const $i = document.getElementById("apiKeyInput");
+      $i.type = $i.type === "password" ? "text" : "password";
+    });
+    document.getElementById("btnSaveKey").addEventListener("click", async () => {
+      const v = document.getElementById("apiKeyInput").value.trim();
+      if (!v) { toast("請輸入金鑰", "err"); return; }
+      if (!v.startsWith("AIzaSy")) {
+        if (!confirm("這看起來不是 Google API 金鑰（通常以 AIzaSy 開頭）。仍要儲存嗎？")) return;
+      }
+      try {
+        await saveSecrets({ geminiApiKey: v });
+        clearApiKeyCache();
+        toast("✓ 金鑰已儲存到 Firestore", "ok");
+        loadApiKey();
+      } catch (err) {
+        toast("儲存失敗：" + err.message, "err");
+      }
+    });
+  }
 
   // ============ 系統資料總覽 + 危險區 ============
   const NAME_ZH = {

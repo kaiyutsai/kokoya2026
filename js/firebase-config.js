@@ -42,8 +42,9 @@ const firebaseConfig = {
   measurementId: "G-CGBTGQZ6PX"
 };
 
-// 其他 API（地圖、AI 等）金鑰；自行視需求使用
-export const EXTRA_API_KEY = "AIzaSyB2P72cWIbIwA6dQcGe56VvDiEPPbBx1I0";
+// 注意：其他 API（如 Gemini AI）的金鑰已搬到 Firestore 的 settings/secrets，
+// 不再寫在程式碼裡，避免 GitHub 公開 repo 被掃描標記為「金鑰外洩」。
+// 請於登入後到「設定」頁的「🔑 API 金鑰」section 填入。
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);

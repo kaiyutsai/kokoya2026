@@ -632,6 +632,24 @@ export async function saveLookups(data) {
   }, { merge: true });
 }
 
+// ============ Secrets（API 金鑰之類，存在 Firestore 而非寫在程式碼裡） ============
+const SECRETS_REF = () => doc(db, "settings", "secrets");
+const DEFAULT_SECRETS = { geminiApiKey: "" };
+
+export async function getSecrets() {
+  const s = await getDoc(SECRETS_REF());
+  if (!s.exists()) return { ...DEFAULT_SECRETS };
+  return { ...DEFAULT_SECRETS, ...s.data() };
+}
+
+export async function saveSecrets(data) {
+  await setDoc(SECRETS_REF(), {
+    geminiApiKey: data.geminiApiKey || "",
+    updatedAt: serverTimestamp(),
+    updatedBy: me().email
+  }, { merge: true });
+}
+
 // ============ 系統資料總覽 / 危險區批次清除 ============
 // 一次抓所有 collection 的計數與總額（不分日期、全部）
 export async function getDataStats() {

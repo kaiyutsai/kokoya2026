@@ -1,11 +1,22 @@
 // =====================================================
 // 果果家 KOKOYA · AI 訂單解析（Google Gemini）
 // 把 LINE 訊息/筆記格式的訂單，解析成結構化的客戶訂單陣列
+// 金鑰從 Firestore 讀（settings/secrets），不寫在程式碼裡
 // =====================================================
-import { EXTRA_API_KEY } from "./firebase-config.js";
+import { getSecrets } from "./data.js";
 
 const MODEL = "gemini-2.5-flash";
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${EXTRA_API_KEY}`;
+
+// 簡單記憶體 cache（單次 page lifetime）
+let cachedKey = null;
+async function getApiKey() {
+  if (cachedKey) return cachedKey;
+  const s = await getSecrets();
+  cachedKey = s.geminiApiKey || "";
+  return cachedKey;
+}
+// admin 在 settings 改完金鑰時呼叫，下次解析會重抓
+export function clearApiKeyCache() { cachedKey = null; }
 
 function buildPrompt(items) {
   const itemsList = items.map(i =>
@@ -63,11 +74,12 @@ ${itemsList}
 }
 
 export async function parseOrders(text, items) {
-  if (!EXTRA_API_KEY || !EXTRA_API_KEY.startsWith("AIzaSy")) {
-    throw new Error("Gemini API key 未設定（檢查 firebase-config.js 的 EXTRA_API_KEY）");
+  const apiKey = await getApiKey();
+  if (!apiKey || !apiKey.startsWith("AIzaSy")) {
+    throw new Error("Gemini API 金鑰未設定。請到「⚙️ 設定」頁的「🔑 API 金鑰」section 填入");
   }
   if (!text || !text.trim()) throw new Error("沒有輸入文字");
-  if (!items || !items.length) throw new Error("品項清單為空，請先到「進貨/庫存」建立品項");
+  if (!items || !items.length) throw new Error("品項清單為空，請先到「品項清單」建立品項");
 
   const body = {
     contents: [{
@@ -79,7 +91,8 @@ export async function parseOrders(text, items) {
     }
   };
 
-  const res = await fetch(ENDPOINT, {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
