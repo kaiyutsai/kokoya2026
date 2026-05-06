@@ -12,7 +12,7 @@
 <main class="container">
   <div class="grid cols-4" id="stats">
     <div class="stat accent-orange"><div class="label">今日營收</div><div class="value" id="sToday">—</div><div class="delta">含 <span id="sTodayCnt">0</span> 筆銷售</div><div class="ico">🍊</div></div>
-    <div class="stat accent-tomato"><div class="label">本月營收</div><div class="value" id="sMonth">—</div><div class="delta">毛利 <span id="sMonthProfit">—</span></div><div class="ico">🍎</div></div>
+    <div class="stat accent-tomato"><div class="label">本月營收</div><div class="value" id="sMonth">—</div><div class="delta">利潤 <span id="sMonthProfit">—</span></div><div class="ico">🍎</div></div>
     <div class="stat accent-leaf"><div class="label">本月進貨成本</div><div class="value" id="sCost">—</div><div class="delta">共 <span id="sPurchaseCnt">0</span> 筆</div><div class="ico">📦</div></div>
     <div class="stat accent-lemon"><div class="label">低庫存品項</div><div class="value" id="sLow">—</div><div class="delta" id="sLowList">無</div><div class="ico">⚠️</div></div>
   </div>
@@ -64,18 +64,6 @@
     listPurchases({ days: 35 }),
     listItems()
   ]);
-  const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
-
-  // 即時用「現在 avgCost」重算成本/毛利（不靠銷貨單存的 stale 值）
-  function computeSaleCost(s) {
-    return (s.lines||[]).reduce((tot, l) => {
-      const item = itemMap[l.itemId];
-      const currentAvg = item ? Number(item.avgCost) || 0 : 0;
-      const savedUnit  = Number(l.unitCost) || 0;
-      const unit = currentAvg > 0 ? currentAvg : savedUnit;
-      return tot + Number(l.qty) * unit;
-    }, 0);
-  }
 
   // ---- 今日 ----
   const isSameDay = (a,b) => {
@@ -91,14 +79,15 @@
   const monthKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
   const inMonth = (s) => fmt.monthKey(s.date) === monthKey;
   const monthSales = sales.filter(inMonth);
+  const monthPurchases = purchases.filter(inMonth);
   const monthRev = monthSales.reduce((a,b)=>a+b.total,0);
-  const monthCost = monthSales.reduce((a,b)=>a+computeSaleCost(b),0);
-  const monthProfit = monthRev - monthCost;
+  const monthPurchaseTotal = monthPurchases.reduce((a,b)=>a+(b.total||0),0);
+  // 利潤 = 本月營收 − 本月進貨成本
+  const monthProfit = monthRev - monthPurchaseTotal;
   document.getElementById("sMonth").textContent = fmt.money(monthRev);
   document.getElementById("sMonthProfit").textContent = fmt.money(monthProfit);
 
-  const monthPurchases = purchases.filter(inMonth);
-  document.getElementById("sCost").textContent = fmt.money(monthPurchases.reduce((a,b)=>a+b.total,0));
+  document.getElementById("sCost").textContent = fmt.money(monthPurchaseTotal);
   document.getElementById("sPurchaseCnt").textContent = monthPurchases.length;
 
   // ---- 低庫存 (<= 5) ----

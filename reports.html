@@ -24,15 +24,15 @@
 
     <div class="grid cols-4">
       <div class="stat accent-orange"><div class="label">總營收</div><div class="value" id="vRev">—</div></div>
-      <div class="stat accent-leaf"><div class="label">總成本</div><div class="value" id="vCost">—</div></div>
-      <div class="stat accent-tomato"><div class="label">毛利</div><div class="value" id="vProfit">—</div><div class="delta" id="vMargin">—</div></div>
+      <div class="stat accent-leaf"><div class="label">進貨成本</div><div class="value" id="vCost">—</div></div>
+      <div class="stat accent-tomato"><div class="label">利潤</div><div class="value" id="vProfit">—</div><div class="delta" id="vMargin">—</div></div>
       <div class="stat accent-lemon"><div class="label">銷售筆數</div><div class="value" id="vCnt">—</div></div>
     </div>
   </div>
 
   <div class="grid cols-2" style="margin-top:18px">
     <section class="card">
-      <div class="card-h"><h3>每日營收 vs 毛利</h3></div>
+      <div class="card-h"><h3>每日營收 vs 利潤</h3></div>
       <canvas id="chDaily" height="170"></canvas>
     </section>
     <section class="card">
@@ -45,7 +45,7 @@
     <div class="card-h"><h3>熱賣品項排行</h3></div>
     <div class="table-wrap">
       <table class="tb">
-        <thead><tr><th>排名</th><th>品項</th><th class="num">售出量</th><th class="num">營收</th><th class="num">毛利</th><th class="num">毛利率</th></tr></thead>
+        <thead><tr><th>排名</th><th>品項</th><th class="num">售出量</th><th class="num">營收</th><th class="num">利潤</th><th class="num">利潤率</th></tr></thead>
         <tbody id="rank"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
       </table>
     </div>
@@ -55,7 +55,7 @@
     <div class="card-h"><h3>經辦人銷售統計</h3></div>
     <div class="table-wrap">
       <table class="tb">
-        <thead><tr><th>經辦人</th><th class="num">單數</th><th class="num">營收</th><th class="num">毛利</th><th class="num">平均單金額</th></tr></thead>
+        <thead><tr><th>經辦人</th><th class="num">單數</th><th class="num">營收</th><th class="num">利潤</th><th class="num">平均單金額</th></tr></thead>
         <tbody id="byUser"><tr><td colspan="5" class="empty">—</td></tr></tbody>
       </table>
     </div>
@@ -93,15 +93,15 @@
     ]);
     const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
 
-    // KPI（成本/毛利 用現在 avgCost 重算，比較準）
+    // KPI（用「現金流視角」：利潤 = 期間營收 − 期間進貨花費）
     const rev    = sales.reduce((a,b)=>a+(b.total||0), 0);
-    const cost   = sales.reduce((a,b)=>a+computeSaleCost(b, itemMap), 0);
+    const cost   = purchases.reduce((a,b)=>a+(b.total||0), 0);
     const profit = rev - cost;
     document.getElementById("vRev").textContent    = fmt.money(rev);
     document.getElementById("vCost").textContent   = fmt.money(cost);
     document.getElementById("vProfit").textContent = fmt.money(profit);
     document.getElementById("vCnt").textContent    = sales.length;
-    document.getElementById("vMargin").textContent = rev>0 ? `毛利率 ${(profit/rev*100).toFixed(1)}%` : "—";
+    document.getElementById("vMargin").textContent = rev>0 ? `利潤率 ${(profit/rev*100).toFixed(1)}%` : "—";
 
     // Daily chart
     const labels = [], rArr = [], pArr = [];
@@ -109,12 +109,16 @@
       const d = new Date(); d.setDate(d.getDate() - i);
       const lbl = `${d.getMonth()+1}/${d.getDate()}`;
       labels.push(lbl);
-      const todays = sales.filter(s => {
-        const sd = s.date.toDate ? s.date.toDate() : new Date(s.date);
-        return sd.toDateString() === d.toDateString();
-      });
-      rArr.push(todays.reduce((a,b)=>a+b.total,0));
-      pArr.push(todays.reduce((a,b)=>a + (b.total||0) - computeSaleCost(b, itemMap), 0));
+      const sameDay = (x) => {
+        const xd = x.date.toDate ? x.date.toDate() : new Date(x.date);
+        return xd.toDateString() === d.toDateString();
+      };
+      const todaysSales     = sales.filter(sameDay);
+      const todaysPurchases = purchases.filter(sameDay);
+      const dayRev  = todaysSales.reduce((a,b)=>a+(b.total||0), 0);
+      const dayCost = todaysPurchases.reduce((a,b)=>a+(b.total||0), 0);
+      rArr.push(dayRev);
+      pArr.push(dayRev - dayCost);  // 利潤 = 該日營收 − 該日進貨
     }
     if (chDaily) chDaily.destroy();
     chDaily = new Chart(document.getElementById("chDaily"), {
@@ -123,7 +127,7 @@
         labels,
         datasets: [
           { label:"營收", data:rArr, backgroundColor:"rgba(232,168,124,.85)", borderRadius:6 },
-          { label:"毛利", data:pArr, backgroundColor:"rgba(168,184,158,.85)", borderRadius:6 }
+          { label:"利潤", data:pArr, backgroundColor:"rgba(168,184,158,.85)", borderRadius:6 }
         ]
       },
       options: {
