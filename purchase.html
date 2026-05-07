@@ -16,7 +16,7 @@
         <button type="button" class="btn ghost icon-only" id="btnHelp" title="操作說明" style="margin-left:8px;font-size:1rem">❓</button>
       </h2>
     </div>
-    <form id="form">
+    <form id="form" novalidate>
       <div class="row-fields">
         <div class="field"><label>進貨日期</label><input type="date" class="input" id="fDate" required></div>
         <div class="field"><label>供應商</label><input class="input" id="fSupplier" list="dlSupplier" placeholder="例：崑山水果（從清單選或手動輸入）"></div>
@@ -115,7 +115,7 @@
       <div class="line-row" style="margin-bottom:14px;border:1px dashed var(--line);border-radius:var(--r-md);padding:12px 12px 6px;background:#fff">
         <div class="row-fields" style="margin-bottom:6px;align-items:end">
           <div class="field" style="margin-bottom:0;grid-column:span 2"><label>品項</label>
-            <select class="select sl-item" required><option value="">請選擇</option>${opts}</select>
+            <select class="select sl-item"><option value="">請選擇</option>${opts}</select>
           </div>
           <div class="field" style="margin-bottom:0"><label>進貨方式</label>
             <select class="select sl-mode">
