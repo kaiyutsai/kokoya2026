@@ -9,8 +9,6 @@
 <link rel="stylesheet" href="css/style.css">
 <!-- html2canvas：用於把出貨單畫面轉成 JPG 下載 -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<!-- QRCode.js：在出貨單上印 FB 社團 QR -->
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   /* ===== 列印（PDF 另存）排版 ===== */
   @media print {
@@ -477,14 +475,20 @@ ${docHTML}
     toast("✓ Word 檔已下載", "ok");
   });
 
-  // 預先產生 QR Code（FB 社團）為 base64，後續所有出貨單共用
-  const FB_GROUP_URL = "https://www.facebook.com/share/g/14cSCPrgFQJ/";
+  // FB 社團 QR：使用 assets/fb-qr.png 靜態圖（先轉 base64 確保 html2canvas 能正確渲染）
   let fbQrDataUrl = "";
-  if (typeof QRCode !== "undefined") {
-    try {
-      fbQrDataUrl = await QRCode.toDataURL(FB_GROUP_URL, { width: 200, margin: 1, color: { dark: "#4A3325", light: "#ffffff" } });
-    } catch (e) { console.warn("QR 產生失敗", e); }
-  }
+  try {
+    const res = await fetch("assets/fb-qr.png");
+    if (res.ok) {
+      const blob = await res.blob();
+      fbQrDataUrl = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload  = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    }
+  } catch (e) { console.warn("FB QR 載入失敗", e); }
 
   // 共用：把 shipment 物件轉成出貨單 HTML（給單張預覽 + 多張列印共用）
   function renderShipDocHtml(s, includeNote) {

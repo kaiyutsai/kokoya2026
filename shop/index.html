@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>果果家 KOKOYA · 新鮮水果直送</title>
+<meta name="description" content="果果家 KOKOYA · 嚴選當季新鮮水果，產地直送，安心配送到家">
+<link rel="icon" href="assets/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/shop.css">
+</head>
+<body>
+
+<!-- ============= Top Bar ============= -->
+<header class="topbar">
+  <div class="inner">
+    <a href="#top" class="brand">
+      <img src="assets/logo.png" alt="果果家">
+      <div>
+        果果家
+        <span class="en">KOKOYA</span>
+      </div>
+    </a>
+
+    <nav class="nav" id="mainNav">
+      <a href="#home">首頁</a>
+      <a href="#season">當季水果</a>
+      <a href="#products">水果禮盒</a>
+      <a href="#brand">品牌故事</a>
+      <a href="#contact">聯絡我們</a>
+    </nav>
+
+    <button class="menu-toggle" id="menuToggle" aria-label="選單">☰</button>
+
+    <button class="cta-buy" id="btnOpenCart">
+      🛒 立即選購 <span class="badge-cnt" id="cartCount"></span>
+    </button>
+  </div>
+</header>
+
+<!-- ============= Hero ============= -->
+<section id="home" class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div>
+        <h1>新鮮水果，<br>送進每一個家的<span class="accent">甜美日常</span></h1>
+        <p class="lead">嚴選當季新鮮 · 產地直送 · 安心配送</p>
+        <div class="hero-cta">
+          <a href="#products" class="btn primary">🛒 選購水果</a>
+          <a href="#products" class="btn outline">查看禮盒</a>
+        </div>
+      </div>
+      <div class="hero-image" aria-hidden="true"></div>
+    </div>
+
+    <!-- 三大特色 -->
+    <div class="features">
+      <div class="feat">
+        <div class="ico">🚚</div>
+        <div>
+          <div class="ttl">當季直送</div>
+          <div class="sub">產地直送最新鮮</div>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="ico">🍎</div>
+        <div>
+          <div class="ttl">品質嚴選</div>
+          <div class="sub">嚴格把關安心食用</div>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="ico">📦</div>
+        <div>
+          <div class="ttl">安心包裝</div>
+          <div class="sub">妥善包裝新鮮到家</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============= 人氣推薦 ============= -->
+<section id="products" class="section">
+  <div class="container">
+    <div class="section-head">
+      <h2>人氣水果推薦</h2>
+      <div class="sub">本季最熱賣，挑選最甜美的</div>
+    </div>
+    <div class="products" id="productList">
+      <!-- skeleton -->
+      <div class="card-product"><div class="thumb skeleton"></div><div class="body"><div class="skeleton" style="height:14px;margin-bottom:8px"></div><div class="skeleton" style="height:10px;width:70%"></div></div></div>
+      <div class="card-product"><div class="thumb skeleton"></div><div class="body"><div class="skeleton" style="height:14px;margin-bottom:8px"></div><div class="skeleton" style="height:10px;width:70%"></div></div></div>
+      <div class="card-product"><div class="thumb skeleton"></div><div class="body"><div class="skeleton" style="height:14px;margin-bottom:8px"></div><div class="skeleton" style="height:10px;width:70%"></div></div></div>
+      <div class="card-product"><div class="thumb skeleton"></div><div class="body"><div class="skeleton" style="height:14px;margin-bottom:8px"></div><div class="skeleton" style="height:10px;width:70%"></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============= 當季分類 ============= -->
+<section id="season" class="section" style="background:var(--bg-2)">
+  <div class="container">
+    <div class="section-head">
+      <h2>本月當季水果</h2>
+      <div class="sub">點選分類，看當季最新</div>
+    </div>
+    <div class="cats" id="catList">
+      <div class="cat" data-cat="蘋果"><div class="circle red">🍎</div><div class="name">蘋果</div></div>
+      <div class="cat" data-cat="水梨"><div class="circle green">🍐</div><div class="name">水梨</div></div>
+      <div class="cat" data-cat="柑橘"><div class="circle">🍊</div><div class="name">柑橘</div></div>
+      <div class="cat" data-cat="葡萄"><div class="circle purple">🍇</div><div class="name">葡萄</div></div>
+      <div class="cat" data-cat="草莓"><div class="circle red">🍓</div><div class="name">草莓</div></div>
+      <div class="cat" data-cat="奇異果"><div class="circle yellow">🥝</div><div class="name">奇異果</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============= 品牌訊息 ============= -->
+<section id="brand" class="section">
+  <div class="container">
+    <div class="brand-block">
+      <h2>果果家，分享來自大地的美好與溫暖 🍃</h2>
+      <p>用心挑選每一顆水果，讓新鮮與幸福，隨伴您與家人的每一天 ❤️</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============= Footer ============= -->
+<footer id="contact" class="footer">
+  <div class="container">
+    <div class="grid">
+      <div>
+        <a class="brand" href="#top">
+          <img src="assets/logo.png" alt="果果家" style="width:48px;height:48px">
+          <div>
+            果果家
+            <span class="en">KOKOYA</span>
+          </div>
+        </a>
+        <p style="font-size:.86rem;color:var(--ink-3);margin-top:10px;line-height:1.6">
+          家裡的小水果攤，<br>新鮮直送，溫暖到家 🌿
+        </p>
+      </div>
+      <div>
+        <h4>購物指南</h4>
+        <ul>
+          <li><a href="#products">瀏覽水果</a></li>
+          <li><a href="#contact">付款方式</a></li>
+          <li><a href="#contact">配送說明</a></li>
+          <li><a href="#contact">退換貨政策</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>熱門分類</h4>
+        <ul>
+          <li><a href="#season">當季水果</a></li>
+          <li><a href="#products">水果禮盒</a></li>
+          <li><a href="#products">綜合水果</a></li>
+          <li><a href="#products">優惠特惠</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>關於我們</h4>
+        <ul>
+          <li><a href="#brand">品牌故事</a></li>
+          <li><a href="#brand">食品安全</a></li>
+          <li><a href="#contact">聯絡資訊</a></li>
+          <li><a href="#contact">常見問題</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>追蹤我們</h4>
+        <div class="social">
+          <a href="https://www.facebook.com/share/g/14cSCPrgFQJ/" target="_blank" rel="noopener" title="FB 社團">📘</a>
+          <a href="#" title="IG">📷</a>
+          <a href="#" title="LINE">💬</a>
+        </div>
+        <p style="margin-top:14px;font-size:.78rem;color:var(--muted)">
+          掃 QR 加入 FB 社團<br>
+          <img src="assets/fb-qr.png" alt="FB QR" style="width:90px;margin-top:6px;border:1px solid var(--line);padding:4px;border-radius:6px;background:#fff">
+        </p>
+      </div>
+    </div>
+    <div class="copy">© 2026 果果家 KOKOYA. All Rights Reserved.</div>
+  </div>
+</footer>
+
+<!-- ============= Cart Drawer ============= -->
+<div class="cart-mask" id="cartMask"></div>
+<aside class="cart-drawer" id="cartDrawer">
+  <div class="cart-h">
+    <h3>🛒 購物車</h3>
+    <button class="cart-close" id="btnCloseCart">✕</button>
+  </div>
+  <div class="cart-body" id="cartBody">
+    <div class="cart-empty">
+      <div style="font-size:3rem;margin-bottom:10px">🍃</div>
+      購物車空空如也<br>挑些水果吧 ✨
+    </div>
+  </div>
+  <div class="cart-foot">
+    <div class="cart-total">
+      <span>合計</span>
+      <span class="amt" id="cartTotal">$0</span>
+    </div>
+    <button class="btn primary" id="btnCheckout" style="width:100%">下一步 · 填寫訂購資訊</button>
+  </div>
+</aside>
+
+<!-- ============= Checkout Modal ============= -->
+<div class="modal-mask" id="checkoutModal">
+  <div class="modal">
+    <h3>📝 訂購資訊</h3>
+    <p style="font-size:.86rem;color:var(--ink-3);margin-top:0;margin-bottom:14px">
+      送出後我們會跟你聯絡確認，請填正確的聯絡方式 🍊
+    </p>
+    <form id="checkoutForm">
+      <div class="field">
+        <label>姓名 *</label>
+        <input id="cName" required placeholder="例：王太太">
+      </div>
+      <div class="field">
+        <label>聯絡電話 *</label>
+        <input id="cPhone" required placeholder="0912-345-678" inputmode="tel">
+      </div>
+      <div class="field">
+        <label>取貨方式</label>
+        <select id="cMethod" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--bg-2);font-family:inherit;font-size:.94rem">
+          <option value="宅配">宅配到府</option>
+          <option value="自取">自取</option>
+        </select>
+      </div>
+      <div class="field" id="addrField">
+        <label>送貨地址</label>
+        <input id="cAddr" placeholder="例：高雄市鳳山區中山路 100 號">
+      </div>
+      <div class="field">
+        <label>備註（選填）</label>
+        <textarea id="cNote" placeholder="特殊需求、配送時間…"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button type="button" class="btn outline" id="btnCancelCheckout" style="flex:1">取消</button>
+        <button type="submit" class="btn primary" style="flex:1.4">送出訂單</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/shop.js"></script>
+</body>
+</html>
