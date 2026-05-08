@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>網站訂單 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .web-order {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 16px 18px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow-sm);
+    border-left: 5px solid var(--line);
+  }
+  .web-order.s-new        { border-left-color: var(--orange); background: #FFF8EE; }
+  .web-order.s-processing { border-left-color: var(--leaf); }
+  .web-order.s-completed  { border-left-color: var(--leaf-deep); opacity: .85; }
+  .web-order.s-cancelled  { border-left-color: var(--muted); opacity: .7; background: #F8F4EA; }
+  .wo-h {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px; margin-bottom: 10px;
+  }
+  .wo-id {
+    font-family: monospace;
+    background: var(--paper-2);
+    padding: 4px 10px;
+    border-radius: var(--r-pill);
+    font-size: .82rem;
+    border: 1px solid var(--line);
+    font-weight: 700;
+  }
+  .wo-status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: var(--r-pill);
+    font-size: .82rem;
+    font-weight: 600;
+  }
+  .wo-status.s-new        { background: #FFE4C4; color: #C97B4B; }
+  .wo-status.s-processing { background: #DBE5CC; color: var(--leaf-deep); }
+  .wo-status.s-completed  { background: #C9D5B7; color: var(--leaf-deep); }
+  .wo-status.s-cancelled  { background: #E0CDAA; color: var(--ink-2); }
+  .wo-meta { font-size: .9rem; color: var(--ink-2); margin-bottom: 8px; line-height: 1.7; }
+  .wo-meta b { color: var(--ink); }
+  .wo-lines {
+    background: var(--paper-2);
+    border-radius: var(--r-sm);
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: .92rem;
+    line-height: 1.7;
+  }
+  .wo-lines .ln { display: flex; justify-content: space-between; padding: 2px 0; }
+  .wo-lines .ln .stk-warn { color: var(--tomato); font-size: .82rem; margin-left: 8px; }
+  .wo-total { font-size: 1.15rem; font-weight: 700; color: var(--tomato); text-align: right; margin-top: 4px; }
+  .wo-actions {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .filter-tabs {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .filter-tab {
+    padding: 8px 16px;
+    border-radius: var(--r-pill);
+    background: #fff;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    font-size: .9rem;
+    color: var(--ink-2);
+    transition: all .15s;
+  }
+  .filter-tab.active {
+    background: var(--orange);
+    color: #fff;
+    border-color: var(--orange);
+  }
+  .filter-tab .cnt {
+    background: rgba(0,0,0,.12);
+    color: inherit;
+    border-radius: var(--r-pill);
+    padding: 1px 8px;
+    margin-left: 4px;
+    font-size: .76rem;
+    font-weight: 700;
+  }
+  .filter-tab.active .cnt { background: rgba(255,255,255,.3); }
+  .src-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--orange-l);
+    color: var(--orange-deep);
+    border-radius: var(--r-pill);
+    font-size: .72rem;
+    margin-left: 6px;
+    border: 1px solid var(--orange);
+  }
+  .pay-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--r-pill);
+    font-size: .76rem;
+    margin-left: 6px;
+  }
+  .pay-tag.awaiting { background: #FFEED2; color: #B07418; }
+  .pay-tag.verify   { background: #DBEAF5; color: #4A6B8A; }
+  .pay-tag.paid     { background: #DBE5CC; color: var(--leaf-deep); }
+</style>
+</head>
+<body>
+<main class="container">
+  <div class="card">
+    <div class="card-h">
+      <h2>📨 網站訂單
+        <span class="muted" id="totalLabel" style="font-size:.85rem;font-weight:400;margin-left:8px"></span>
+      </h2>
+      <button class="btn ghost" id="btnRefresh">🔄 重新載入</button>
+    </div>
+    <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+      客人從購物網 (<a href="../果果家購物網/index.html" target="_blank" style="color:var(--orange-deep)">前端網址</a>) 送進來的訂單會即時出現在這裡。
+      確認可出貨後按「✅ 一鍵建單」，系統會自動建銷貨單 + 出貨單並扣庫存。
+    </p>
+
+    <div class="filter-tabs" id="tabs">
+      <div class="filter-tab active" data-status="new">📨 待處理 <span class="cnt" id="cntNew">0</span></div>
+      <div class="filter-tab" data-status="processing">👨‍🍳 處理中 <span class="cnt" id="cntProc">0</span></div>
+      <div class="filter-tab" data-status="completed">✅ 已完成 <span class="cnt" id="cntDone">0</span></div>
+      <div class="filter-tab" data-status="cancelled">❌ 已取消 <span class="cnt" id="cntCancel">0</span></div>
+      <div class="filter-tab" data-status="all">全部</div>
+    </div>
+
+    <div id="ordersList">
+      <div class="muted" style="text-align:center;padding:60px">載入中…</div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { watchWebOrders, convertWebOrderToSaleShipment, updateWebOrderStatus, deleteWebOrder, listItems } from "./js/data.js";
+
+  const me = await mountShell({ active: "web-orders" });
+
+  let cache = [];
+  let items = [];
+  let curStatus = "new";
+
+  async function loadItems() {
+    items = await listItems();
+  }
+
+  // 即時監聽
+  watchWebOrders((list) => {
+    cache = list;
+    updateCounts();
+    render();
+  });
+  loadItems();
+
+  function updateCounts() {
+    const c = (s) => cache.filter(o => (o.status || "new") === s).length;
+    document.getElementById("cntNew").textContent    = c("new");
+    document.getElementById("cntProc").textContent   = c("processing");
+    document.getElementById("cntDone").textContent   = c("completed");
+    document.getElementById("cntCancel").textContent = c("cancelled");
+  }
+
+  document.querySelectorAll(".filter-tab").forEach(t => {
+    t.addEventListener("click", () => {
+      document.querySelectorAll(".filter-tab").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      curStatus = t.dataset.status;
+      render();
+    });
+  });
+
+  document.getElementById("btnRefresh").addEventListener("click", () => {
+    loadItems();
+    render();
+    toast("已重新載入庫存資料", "ok");
+  });
+
+  function render() {
+    let list = cache;
+    if (curStatus !== "all") list = list.filter(o => (o.status || "new") === curStatus);
+    document.getElementById("totalLabel").textContent =
+      `· ${list.length} 筆 · 共 ${fmt.money(list.reduce((s,o)=>s+(o.total||0), 0))}`;
+
+    const $box = document.getElementById("ordersList");
+    if (!list.length) {
+      $box.innerHTML = `<div class="muted" style="text-align:center;padding:60px">
+        <div style="font-size:3rem;margin-bottom:8px">${curStatus==='new'?'🍃':'📭'}</div>
+        ${curStatus==='new' ? '太棒了，目前沒有待處理的網站訂單' : '此狀態下沒有訂單'}
+      </div>`;
+      return;
+    }
+    $box.innerHTML = list.map(o => renderOne(o)).join("");
+    $box.querySelectorAll("[data-act]").forEach(b => {
+      b.addEventListener("click", () => handleAction(b.dataset.act, b.dataset.id));
+    });
+  }
+
+  function renderOne(o) {
+    const status = o.status || "new";
+    const STATUS_TEXT = {
+      new: "📨 待處理", processing: "👨‍🍳 處理中（已建單）",
+      completed: "✅ 已完成", cancelled: "❌ 已取消"
+    };
+    const PAY_TAG = {
+      awaiting_transfer: `<span class="pay-tag awaiting">⏳ 等待匯款</span>`,
+      pending_verify:    `<span class="pay-tag verify">🔍 對帳中</span>`,
+      paid:              `<span class="pay-tag paid">✅ 已收款</span>`
+    };
+    const linesHtml = (o.lines || []).map(l => {
+      const item = items.find(i => i.id === l.itemId);
+      const stk = item ? Number(item.stock || 0) : 0;
+      const stockWarn = item && stk < l.qty ? `<span class="stk-warn">⚠️ 庫存只剩 ${stk}${l.unit||""}</span>` : "";
+      return `<div class="ln">
+        <span>${l.name} × ${l.qty}${l.unit||""} ${stockWarn}</span>
+        <span style="color:var(--ink-3)">${fmt.money(l.lineTotal || l.qty*l.price)}</span>
+      </div>`;
+    }).join("");
+
+    const time = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
+    const timeStr = isNaN(time) ? "—" : `${time.getMonth()+1}/${time.getDate()} ${String(time.getHours()).padStart(2,"0")}:${String(time.getMinutes()).padStart(2,"0")}`;
+
+    let actions = "";
+    if (status === "new") {
+      actions = `
+        <button class="btn primary" data-act="convert" data-id="${o.id}">✅ 一鍵建單（銷貨+出貨）</button>
+        <button class="btn ghost" data-act="paid" data-id="${o.id}">💰 標記已收款</button>
+        <button class="btn tomato" data-act="cancel" data-id="${o.id}">❌ 取消訂單</button>
+      `;
+    } else if (status === "processing") {
+      actions = `
+        ${o.shipmentId ? `<a class="btn ghost" href="shipping.html" target="_blank">🚚 開啟出貨單</a>` : ""}
+        <button class="btn primary" data-act="complete" data-id="${o.id}">✅ 標記完成</button>
+        <button class="btn ghost" data-act="paid" data-id="${o.id}">💰 標記已收款</button>
+      `;
+    } else if (status === "cancelled") {
+      actions = `<button class="btn ghost" data-act="reopen" data-id="${o.id}">↩️ 重新開啟</button>
+        ${isAdmin(me.email) ? `<button class="btn tomato icon-only" data-act="delete" data-id="${o.id}" title="永久刪除">🗑</button>` : ""}`;
+    } else {
+      actions = `<button class="btn ghost" data-act="reopen" data-id="${o.id}">↩️ 重開</button>`;
+    }
+
+    return `
+      <div class="web-order s-${status}" id="wo-${o.id}">
+        <div class="wo-h">
+          <div>
+            <span class="wo-id">#${o.id.slice(0,8).toUpperCase()}</span>
+            <span class="src-tag">🛒 購物網</span>
+            ${PAY_TAG[o.paymentStatus] || ""}
+          </div>
+          <span class="wo-status s-${status}">${STATUS_TEXT[status] || status}</span>
+        </div>
+        <div class="wo-meta">
+          <b>${o.customer || "—"}</b> · ${o.phone || "—"} · ${o.method || "—"}
+          ${o.address ? `<br>📍 ${o.address}` : ""}
+          ${o.transferLast5 ? `<br>💳 匯款帳號末 5 碼：<b>${o.transferLast5}</b>` : ""}
+          ${o.note ? `<br>📝 ${o.note}` : ""}
+          <br><span class="muted" style="font-size:.82rem">${timeStr} 送出</span>
+          ${o.shipmentNo ? `<br>📦 出貨單號：<b>${o.shipmentNo}</b>` : ""}
+        </div>
+        <div class="wo-lines">${linesHtml || "（無品項）"}</div>
+        <div class="wo-total">合計 ${fmt.money(o.total)}</div>
+        <div class="wo-actions">${actions}</div>
+      </div>`;
+  }
+
+  async function handleAction(act, id) {
+    const order = cache.find(o => o.id === id);
+    if (!order) return;
+
+    if (act === "convert") {
+      if (!confirm(`要把「${order.customer}」的訂單轉成銷貨單 + 出貨單嗎？\n（會自動扣庫存）`)) return;
+      try {
+        const r = await convertWebOrderToSaleShipment(id);
+        toast(`✓ 已建立銷貨 + 出貨單 ${r.shipmentNo}`, "ok");
+      } catch (err) {
+        toast("建單失敗：" + err.message, "err");
+      }
+    } else if (act === "paid") {
+      try {
+        await updateWebOrderStatus(id, { paymentStatus: "paid" });
+        toast("✓ 標記已收款", "ok");
+      } catch (err) { toast(err.message, "err"); }
+    } else if (act === "complete") {
+      try {
+        await updateWebOrderStatus(id, { status: "completed", completedAt: new Date() });
+        toast("✓ 已標記完成", "ok");
+      } catch (err) { toast(err.message, "err"); }
+    } else if (act === "cancel") {
+      const reason = prompt("取消原因（會記錄在訂單上）：", "");
+      if (reason === null) return;
+      try {
+        await updateWebOrderStatus(id, { status: "cancelled", cancelReason: reason });
+        toast("✓ 已取消", "ok");
+      } catch (err) { toast(err.message, "err"); }
+    } else if (act === "reopen") {
+      try {
+        await updateWebOrderStatus(id, { status: "new" });
+        toast("已重新開啟", "ok");
+      } catch (err) { toast(err.message, "err"); }
+    } else if (act === "delete") {
+      if (!confirm(`永久刪除這筆訂單？（不會反向影響已建的銷貨/出貨單）`)) return;
+      try {
+        await deleteWebOrder(id);
+        toast("已刪除", "ok");
+      } catch (err) { toast(err.message, "err"); }
+    }
+  }
+</script>
+</body>
+</html>

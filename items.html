@@ -52,6 +52,8 @@
         <option value="low">低庫存（≤ 警示量）</option>
         <option value="out">已售完</option>
         <option value="hasTier">有售價組合</option>
+        <option value="visible">已上架（購物網看得到）</option>
+        <option value="hidden">未上架（購物網看不到）</option>
       </select>
     </div>
 
@@ -105,6 +107,28 @@
         </select>
       </div>
 
+      <div class="field" style="background:#FFF6E6;padding:14px 16px;border-radius:var(--r-md);border:1px dashed var(--orange)">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="fVisible" style="width:18px;height:18px;accent-color:var(--orange)">
+          🛒 在購物網上架（讓客人看得到並可購買）
+        </label>
+        <p class="muted" style="font-size:.82rem;line-height:1.6;margin:6px 0 0 26px">
+          取消勾選 → 後台仍可進貨/銷貨/出貨，但購物網不會顯示。<br>
+          內部用品項（自家試吃、瑕疵品）建議不上架。
+        </p>
+      </div>
+      <div class="field">
+        <label>🖼️ 商品圖片網址（購物網會顯示，可留空用 emoji）</label>
+        <input class="input" id="fImg" placeholder="https://...（建議 600×400 比例，正方形也可）">
+        <div id="imgPreview" style="margin-top:6px;display:none">
+          <img id="imgPreviewImg" style="max-width:200px;max-height:140px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff" alt="預覽">
+        </div>
+      </div>
+      <div class="field">
+        <label>商品描述（購物網商品卡會顯示，可留空）</label>
+        <input class="input" id="fDesc" placeholder="例：產地直送，當季嚴選">
+      </div>
+
       <!-- 售價組合 -->
       <div class="field">
         <label>售價組合（可多筆，銷貨/批次下拉會出現）</label>
@@ -153,6 +177,8 @@
     if (f === "low") list = list.filter(i => Number(i.stock||0) <= Number(i.lowStock ?? 5));
     if (f === "out") list = list.filter(i => Number(i.stock||0) <= 0);
     if (f === "hasTier") list = list.filter(i => Array.isArray(i.priceTiers) && i.priceTiers.length);
+    if (f === "visible") list = list.filter(i => i.visible !== false);
+    if (f === "hidden")  list = list.filter(i => i.visible === false);
 
     if (!list.length) {
       $rows.innerHTML = `<tr><td colspan="9" class="empty">尚無品項，點右上「＋ 新增品項」建立第一筆 🍓</td></tr>`;
@@ -170,9 +196,12 @@
       const tiersDisp = tiers.length
         ? tiers.map(t => `<span class="tag-tier">${t.label || (t.qty + (i.unit||""))} $${fmt.num(t.price)}</span>`).join("")
         : `<span class="muted" style="font-size:.78rem">—</span>`;
+      const visibleTag = (i.visible === false)
+        ? `<span class="tag" style="background:#F5E8C9;color:var(--ink-3);font-size:.74rem">未上架</span>`
+        : `<span class="tag ok" style="font-size:.74rem">🛒 上架中</span>`;
       return `
         <tr>
-          <td><b>${i.name||""}</b>${i.category?` <span class="muted">· ${i.category}</span>`:""}</td>
+          <td><b>${i.name||""}</b>${i.category?` <span class="muted">· ${i.category}</span>`:""}<br>${visibleTag}</td>
           <td>${unitDisp}${packInfo}</td>
           <td class="num">${i.price ? fmt.money(i.price) : "—"}</td>
           <td>${tiersDisp}</td>
@@ -213,6 +242,11 @@
     document.getElementById("fNote").value    = item?.note || "";
     document.getElementById("fPack").value    = item?.defaultPackSize || "";
     document.getElementById("fBoxUnit").value = item?.boxUnit || "箱";
+    document.getElementById("fImg").value     = item?.imageUrl || "";
+    document.getElementById("fDesc").value    = item?.desc || "";
+    // visible 欄位：新增時預設 true；編輯時用既有值（未設定的舊資料也視為 true）
+    document.getElementById("fVisible").checked = item ? (item.visible !== false) : true;
+    updateImgPreview();
 
     syncUnitDisplay();
 
@@ -242,6 +276,21 @@
       : "";
 
     $modal.classList.add("show");
+  }
+
+  // ----- 圖片預覽 -----
+  document.getElementById("fImg").addEventListener("input", updateImgPreview);
+  function updateImgPreview() {
+    const url = document.getElementById("fImg").value.trim();
+    const $box = document.getElementById("imgPreview");
+    const $img = document.getElementById("imgPreviewImg");
+    if (url) {
+      $img.src = url;
+      $img.onerror = () => { $box.style.display = "none"; };
+      $img.onload  = () => { $box.style.display = "block"; };
+    } else {
+      $box.style.display = "none";
+    }
   }
 
   // ----- 售價組合編輯器 -----
@@ -309,6 +358,9 @@
       note:            document.getElementById("fNote").value,
       defaultPackSize: Number(document.getElementById("fPack").value || 0),
       boxUnit:         document.getElementById("fBoxUnit").value.trim() || "箱",
+      imageUrl:        document.getElementById("fImg").value.trim(),
+      desc:            document.getElementById("fDesc").value.trim(),
+      visible:         document.getElementById("fVisible").checked,
       priceTiers
     };
     try {

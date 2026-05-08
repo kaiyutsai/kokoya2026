@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>水果小教室 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .article-row {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    display: grid;
+    grid-template-columns: 60px 1fr auto;
+    gap: 14px;
+    align-items: center;
+  }
+  .article-row .ico-box {
+    width: 60px; height: 60px;
+    border-radius: var(--r-md);
+    background: var(--paper-2);
+    display: grid; place-items: center;
+    font-size: 2rem;
+    overflow: hidden;
+  }
+  .article-row .ico-box img { width: 100%; height: 100%; object-fit: cover; }
+  .article-row .info .ttl { font-weight: 700; font-size: 1.05rem; color: var(--ink-1); margin-bottom: 4px; }
+  .article-row .info .meta { font-size: .82rem; color: var(--ink-3); }
+  .preview-pane {
+    background: var(--paper-2);
+    padding: 14px 18px;
+    border-radius: var(--r-md);
+    font-size: .9rem;
+    line-height: 1.7;
+    margin-top: 8px;
+    border: 1px dashed var(--line);
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .preview-pane h2 { font-size: 1.15rem; margin: 8px 0 4px; }
+  .preview-pane h3 { font-size: 1rem; margin: 6px 0 4px; }
+  .preview-pane p { margin: 6px 0; }
+  .preview-pane ul { padding-left: 22px; margin: 4px 0; }
+  .preview-pane strong { color: var(--orange-deep); }
+  .pub-tag.on  { background: #DBE5CC; color: var(--leaf-deep); }
+  .pub-tag.off { background: #F5E8C9; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<main class="container">
+  <div class="card">
+    <div class="card-h">
+      <h2>📚 水果小教室</h2>
+      <div class="flex" style="gap:8px">
+        <button class="btn ghost" id="btnSeed">🌱 一鍵建立 8 篇範本文章</button>
+        <button class="btn primary" id="btnAdd">＋ 新增文章</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.92rem;line-height:1.7;margin:0 0 14px">
+      文章會顯示在購物網的「水果小教室」區。<b>一鍵建立範本</b>：第一次用點這個，會自動寫入 8 篇預設教學文章草稿，可以直接編輯使用。
+    </p>
+
+    <div id="articleList">
+      <div class="muted" style="text-align:center;padding:40px">載入中…</div>
+    </div>
+  </div>
+</main>
+
+<!-- 編輯 modal -->
+<div class="modal-mask" id="modal">
+  <div class="modal" style="width:min(860px, 96vw)">
+    <div class="card-h"><h2 id="mTitle">新增文章</h2></div>
+    <form id="form">
+      <input type="hidden" id="fId">
+      <div class="row-fields">
+        <div class="field" style="grid-column:1/-1"><label>標題 *</label>
+          <input class="input" id="fTitle" required placeholder="例：如何挑選甜美的紐西蘭蘋果">
+        </div>
+      </div>
+      <div class="row-fields">
+        <div class="field"><label>分類（對應水果）</label>
+          <select class="select" id="fCategory">
+            <option value="">未分類</option>
+            <option>蘋果</option><option>水梨</option><option>柑橘</option>
+            <option>葡萄</option><option>草莓</option><option>奇異果</option>
+            <option>釋迦</option><option>香蕉</option><option>芒果</option>
+            <option>火龍果</option><option>百香果</option><option>木瓜</option>
+            <option>蓮霧</option><option>楊桃</option><option>柚子</option>
+            <option>其他</option>
+          </select>
+        </div>
+        <div class="field"><label>圖示 emoji（沒設封面圖時用）</label>
+          <input class="input" id="fIcon" placeholder="🍎" maxlength="4">
+        </div>
+        <div class="field"><label>排序（小→大）</label>
+          <input class="input" id="fOrder" type="number" step="1" value="100">
+        </div>
+      </div>
+      <div class="field"><label>封面圖網址（可空）</label>
+        <input class="input" id="fCover" placeholder="https://...">
+      </div>
+      <div class="field"><label>網址 slug（英文-小寫）</label>
+        <input class="input" id="fSlug" placeholder="how-to-pick-apple">
+        <p class="muted" style="font-size:.8rem;margin-top:4px">會出現在文章網址，例如 <code>blog-detail.html?slug=how-to-pick-apple</code>。留空會自動由標題產生。</p>
+      </div>
+      <div class="field"><label>摘要（列表頁顯示）</label>
+        <textarea class="textarea" id="fExcerpt" rows="2" placeholder="文章列表卡片下方的描述文字，1-2 行即可"></textarea>
+      </div>
+      <div class="field"><label>內文（支援 Markdown）</label>
+        <textarea class="textarea" id="fBody" rows="14"
+                  placeholder="## 怎麼挑選
+
+蘋果好不好吃，關鍵在這 3 個：
+
+- **看顏色** — 紅色品種要均勻、有自然光澤
+- **聞香氣** — 有蘋果香就是熟了
+- **敲一敲** — 聲音清脆代表水分飽滿
+
+## 保存方式
+
+放冰箱蔬果室，可以保存兩週以上…"></textarea>
+        <div class="preview-pane" id="bodyPreview">內文預覽會顯示在這裡…</div>
+      </div>
+      <div class="field"><label>挑選重點（列表式，每行一條，可空）</label>
+        <textarea class="textarea" id="fTips" rows="4" placeholder="看顏色：紅色均勻有光澤
+聞香氣：聞得到果香就是熟了
+敲一敲：清脆聲代表水分多"></textarea>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="fPublished" checked style="width:18px;height:18px">
+          <span>已發佈（購物網會顯示）</span>
+        </label>
+      </div>
+      <div class="flex" style="justify-content:flex-end;gap:8px;margin-top:14px">
+        <button type="button" class="btn ghost" id="btnCancel">取消</button>
+        <button type="button" class="btn tomato" id="btnDel" style="display:none">🗑 刪除</button>
+        <button type="submit" class="btn primary">💾 儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listArticles, upsertArticle, deleteArticle, getArticle } from "./js/data.js";
+  import { renderMarkdown, slugify } from "./js/markdown.js";
+  import { SAMPLE_ARTICLES } from "./js/sample-articles.js";
+
+  const me = await mountShell({ active: "articles" });
+  const $ = id => document.getElementById(id);
+
+  let cache = [];
+
+  async function reload() {
+    cache = await listArticles();
+    render();
+  }
+
+  function render() {
+    const $box = $("articleList");
+    if (!cache.length) {
+      $box.innerHTML = `<div class="muted" style="text-align:center;padding:60px;background:#fff;border:1px dashed var(--line);border-radius:var(--r-md)">
+        <div style="font-size:2.4rem;margin-bottom:8px">📚</div>
+        還沒有文章。點上方「🌱 一鍵建立範本」匯入 8 篇起步，或自己「＋ 新增文章」
+      </div>`;
+      return;
+    }
+    $box.innerHTML = cache.map(a => {
+      const cover = a.cover
+        ? `<img src="${a.cover}" alt="" onerror="this.parentElement.textContent='${a.icon||'📚'}'">`
+        : (a.icon || "📚");
+      const pubTag = a.published === false
+        ? `<span class="tag pub-tag off">未發佈</span>`
+        : `<span class="tag pub-tag on">✓ 已發佈</span>`;
+      return `
+        <div class="article-row">
+          <div class="ico-box">${cover}</div>
+          <div class="info">
+            <div class="ttl">${a.title || "(無標題)"} ${pubTag}</div>
+            <div class="meta">
+              ${a.category ? `分類：${a.category}` : "未分類"}
+              ${a.slug ? ` · slug: <code>${a.slug}</code>` : ""}
+              · 排序 ${a.order || 0}
+            </div>
+          </div>
+          <div>
+            <button class="btn ghost icon-only" data-edit="${a.id}" title="編輯">✎</button>
+          </div>
+        </div>`;
+    }).join("");
+    $box.querySelectorAll("[data-edit]").forEach(b => {
+      b.addEventListener("click", () => openModal(cache.find(a => a.id === b.dataset.edit)));
+    });
+  }
+
+  $("btnAdd").addEventListener("click", () => openModal(null));
+  $("btnCancel").addEventListener("click", () => $("modal").classList.remove("show"));
+  $("modal").addEventListener("click", e => { if (e.target === $("modal")) $("modal").classList.remove("show"); });
+
+  function openModal(item) {
+    $("mTitle").textContent = item ? "編輯文章" : "新增文章";
+    $("fId").value         = item?.id || "";
+    $("fTitle").value      = item?.title || "";
+    $("fCategory").value   = item?.category || "";
+    $("fIcon").value       = item?.icon || "";
+    $("fOrder").value      = item?.order ?? 100;
+    $("fCover").value      = item?.cover || "";
+    $("fSlug").value       = item?.slug || "";
+    $("fExcerpt").value    = item?.excerpt || "";
+    $("fBody").value       = item?.body || "";
+    $("fTips").value       = item?.tips || "";
+    $("fPublished").checked = item ? (item.published !== false) : true;
+    updatePreview();
+
+    const $del = $("btnDel");
+    if (item && isAdmin(me.email)) {
+      $del.style.display = "inline-flex";
+      $del.onclick = async () => {
+        if (!confirm(`刪除文章「${item.title}」？無法復原。`)) return;
+        try {
+          await deleteArticle(item.id);
+          toast("已刪除", "ok");
+          $("modal").classList.remove("show");
+          reload();
+        } catch (err) { toast(err.message, "err"); }
+      };
+    } else {
+      $del.style.display = "none";
+    }
+    $("modal").classList.add("show");
+  }
+
+  // 即時預覽
+  $("fBody").addEventListener("input", updatePreview);
+  function updatePreview() {
+    const body = $("fBody").value;
+    $("bodyPreview").innerHTML = body ? renderMarkdown(body) : `<span class="muted">內文預覽會顯示在這裡…</span>`;
+  }
+
+  // slug auto fill from title 如果空白
+  $("fTitle").addEventListener("input", () => {
+    if (!$("fSlug").value) {
+      $("fSlug").value = slugify($("fTitle").value);
+    }
+  });
+
+  $("form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const id = $("fId").value;
+    const title = $("fTitle").value.trim();
+    if (!title) return toast("請填標題", "err");
+    let slug = $("fSlug").value.trim() || slugify(title);
+
+    try {
+      await upsertArticle(id || null, {
+        title,
+        slug,
+        category:  $("fCategory").value,
+        icon:      $("fIcon").value.trim(),
+        cover:     $("fCover").value.trim(),
+        order:     Number($("fOrder").value) || 100,
+        excerpt:   $("fExcerpt").value.trim(),
+        body:      $("fBody").value,
+        tips:      $("fTips").value.trim(),
+        published: $("fPublished").checked
+      });
+      toast(id ? "已更新" : "已新增", "ok");
+      $("modal").classList.remove("show");
+      reload();
+    } catch (err) {
+      toast("儲存失敗：" + err.message, "err");
+    }
+  });
+
+  // 範本一鍵匯入
+  $("btnSeed").addEventListener("click", async () => {
+    if (!confirm(`會建立 ${SAMPLE_ARTICLES.length} 篇範本文章。\n（已存在的不會覆蓋，新文章會直接加入）\n\n繼續嗎？`)) return;
+    const $btn = $("btnSeed");
+    $btn.disabled = true;
+    $btn.textContent = "匯入中…";
+    let ok = 0, skip = 0;
+    for (const a of SAMPLE_ARTICLES) {
+      // 檢查是否已存在同 slug
+      const exists = cache.find(x => x.slug === a.slug);
+      if (exists) { skip++; continue; }
+      try {
+        await upsertArticle(null, a);
+        ok++;
+      } catch (err) {
+        console.error("匯入失敗:", a.title, err);
+      }
+    }
+    toast(`✓ 匯入完成：新增 ${ok} 篇，跳過 ${skip} 篇（已存在）`, "ok");
+    $btn.disabled = false;
+    $btn.textContent = "🌱 一鍵建立 8 篇範本文章";
+    reload();
+  });
+
+  reload();
+</script>
+</body>
+</html>

@@ -192,6 +192,22 @@ h3 { font-size: 1.05rem; font-weight: 600; }
   box-shadow: 0 2px 6px rgba(232,168,124,.45);
 }
 .drawer-nav a .ico { font-size: 1.2rem; line-height: 1; flex-shrink: 0; }
+.nav-badge {
+  display: inline-grid; place-items: center;
+  margin-left: 6px;
+  background: #DD3838;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  min-width: 20px; height: 20px;
+  border-radius: 999px;
+  padding: 0 6px;
+  animation: pulseBadge 1.6s infinite;
+}
+@keyframes pulseBadge {
+  0%,100% { box-shadow: 0 0 0 0 rgba(221,56,56,.5); }
+  50%     { box-shadow: 0 0 0 6px rgba(221,56,56,0); }
+}
 
 .drawer-foot {
   padding: 12px 18px;
@@ -523,7 +539,7 @@ table.tb .empty { text-align: center; color: var(--ink-3); padding: 30px; font-s
   text-align: center;
 }
 .ship-doc .thanks .msg {
-  font-size: 1.25rem;
+  font-size: 1.45rem;
   color: var(--tomato);
   font-weight: 700;
   letter-spacing: .12em;
@@ -531,7 +547,7 @@ table.tb .empty { text-align: center; color: var(--ink-3); padding: 30px; font-s
 }
 .ship-doc .thanks .sub {
   color: var(--ink-3);
-  font-size: .88rem;
+  font-size: 1rem;
   margin-top: 6px;
   letter-spacing: .12em;
 }
@@ -548,25 +564,53 @@ table.tb .empty { text-align: center; color: var(--ink-3); padding: 30px; font-s
   padding-bottom: 16px; margin-bottom: 22px;
 }
 .ship-doc .head .title {
-  font-size: 1.8rem; font-weight: 700; letter-spacing: .25em;
+  font-size: 2.1rem; font-weight: 700; letter-spacing: .25em;
   color: var(--ink-2);
 }
-.ship-doc .head .sub { color: var(--ink-3); font-size: .9rem; letter-spacing: .15em; }
-.ship-doc .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 30px; margin-bottom: 22px; }
-.ship-doc .meta .lbl { color: var(--ink-3); font-size: .82rem; }
-.ship-doc .meta .val { font-size: 1rem; font-weight: 500; border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+.ship-doc .head .sub { color: var(--ink-3); font-size: 1rem; letter-spacing: .15em; }
+
+/* meta：左 2 欄資料 + 右 1 欄 QR（QR 固定在訂購日期旁邊空白區） */
+.ship-doc .meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr 140px;
+  gap: 18px 30px;
+  margin-bottom: 22px;
+  align-items: start;
+}
+.ship-doc .meta .lbl { color: var(--ink-3); font-size: .98rem; }
+.ship-doc .meta .val { font-size: 1.18rem; font-weight: 500; border-bottom: 1px dashed var(--line); padding-bottom: 5px; }
+.ship-doc .meta-qr-cell {
+  grid-column: 3 / 4;
+  grid-row: 1 / span 3;          /* 從第一列起跨 3 列高度，吃滿訂購日期旁邊空白區 */
+  text-align: center;
+  align-self: start;
+}
+.ship-doc .meta-qr-cell .qr-wrap img.qr {
+  width: 130px; height: 130px;
+  border: 1px solid var(--line);
+  padding: 4px; background: #fff;
+  border-radius: 6px;
+  display: block;
+}
+.ship-doc .meta-qr-cell .qr-wrap .qr-label {
+  font-size: .8rem; color: var(--ink-3);
+  margin-top: 6px; letter-spacing: .04em;
+  line-height: 1.4;
+}
+.ship-doc .meta-qr-cell .qr-wrap .qr-label b { color: var(--tomato); }
+
 .ship-doc table {
   width: 100%; border-collapse: collapse; margin: 14px 0;
 }
 .ship-doc table th, .ship-doc table td {
   border: 1px solid var(--ink-3);
-  padding: 10px 12px; text-align: left; font-size: .94rem;
+  padding: 11px 12px; text-align: left; font-size: 1.08rem;
 }
-.ship-doc table th { background: var(--paper-2); color: var(--ink-2); font-weight: 700; }
+.ship-doc table th { background: var(--paper-2); color: var(--ink-2); font-weight: 700; font-size: 1.1rem; }
 .ship-doc table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .ship-doc .totals { margin-top: 16px; text-align: right; }
-.ship-doc .totals .row { padding: 4px 0; }
-.ship-doc .totals .grand { font-size: 1.2rem; font-weight: 700; color: var(--tomato); border-top: 2px solid var(--ink-2); padding-top: 10px; }
+.ship-doc .totals .row { padding: 4px 0; font-size: 1.05rem; }
+.ship-doc .totals .grand { font-size: 1.45rem; font-weight: 700; color: var(--tomato); border-top: 2px solid var(--ink-2); padding-top: 10px; }
 .ship-doc .signs {
   display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 36px;
 }
@@ -720,7 +764,8 @@ table.tb .empty { text-align: center; color: var(--ink-3); padding: 30px; font-s
 
   /* ===== 出貨單列印模式 (.ship-doc) 手機預覽 ===== */
   .ship-doc { padding: 18px; }
-  .ship-doc .meta { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ship-doc .meta { grid-template-columns: 1fr 1fr 110px; gap: 10px; }
+  .ship-doc .meta-qr-cell .qr-wrap img.qr { width: 100px; height: 100px; }
   .ship-doc .signs { grid-template-columns: 1fr; gap: 16px; }
 
   /* ===== 設定頁：lookup-pill ===== */

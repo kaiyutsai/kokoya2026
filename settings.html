@@ -96,6 +96,28 @@
       </div>
     </div>
 
+    <!-- 銀行帳號（給購物網訂單顯示用） -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>💳 銀行帳號（線上轉帳）</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        客人在購物網結帳時會看到這個帳號。設定後購物網會自動同步顯示。<br>
+        <b>提醒：</b>這份資料是公開可讀的（任何訪客都能看到），請只放收款用的帳號。
+      </p>
+      <div class="row-fields">
+        <div class="field"><label>銀行名稱</label><input class="input" id="payBankName" placeholder="例：玉山銀行"></div>
+        <div class="field"><label>銀行代碼</label><input class="input" id="payBankCode" placeholder="例：808"></div>
+      </div>
+      <div class="row-fields">
+        <div class="field"><label>戶名</label><input class="input" id="payAccountName" placeholder="例：蔡凱宇"></div>
+        <div class="field"><label>帳號</label><input class="input" id="payBankAccount" placeholder="例：1234-5678-9012-345"></div>
+      </div>
+      <div class="field"><label>備註（選填）</label><textarea class="textarea" id="payNote" placeholder="例：請於 24 小時內匯款，逾時取消訂單"></textarea></div>
+      <div class="flex" style="justify-content:flex-end;gap:8px">
+        <button class="btn primary" type="button" id="btnSavePayment">💾 儲存銀行資訊</button>
+      </div>
+      <div id="paymentStatus" class="muted" style="font-size:.85rem;margin-top:8px"></div>
+    </div>
+
     <!-- 經辦人 -->
     <div class="card" style="margin-top:14px">
       <div class="card-h"><h2>👤 經辦人</h2></div>
@@ -141,7 +163,7 @@
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
   import { getLookups, saveLookups, getDataStats, clearCollection, resetTransactionsAndStock,
-           getSecrets, saveSecrets } from "./js/data.js";
+           getSecrets, saveSecrets, getPayment, savePayment } from "./js/data.js";
   import { clearApiKeyCache } from "./js/ai-parse.js";
 
   const me = await mountShell({ active: "settings" });
@@ -163,6 +185,51 @@
     bindDataPanel();
     bindApiKeyPanel();
     loadApiKey();
+    bindPaymentPanel();
+    loadPayment();
+  }
+
+  // ===== 銀行帳號 =====
+  function bindPaymentPanel() {
+    document.getElementById("btnSavePayment").addEventListener("click", async () => {
+      const $btn = document.getElementById("btnSavePayment");
+      $btn.disabled = true;
+      $btn.textContent = "儲存中…";
+      try {
+        await savePayment({
+          bankName:    document.getElementById("payBankName").value.trim(),
+          bankCode:    document.getElementById("payBankCode").value.trim(),
+          accountName: document.getElementById("payAccountName").value.trim(),
+          bankAccount: document.getElementById("payBankAccount").value.trim(),
+          note:        document.getElementById("payNote").value.trim()
+        });
+        document.getElementById("paymentStatus").innerHTML =
+          `<span style="color:var(--leaf-deep)">✓ 已儲存，購物網結帳頁會即時更新</span>`;
+        toast("✓ 銀行帳號已儲存", "ok");
+      } catch (err) {
+        toast("儲存失敗：" + err.message, "err");
+      }
+      $btn.disabled = false;
+      $btn.textContent = "💾 儲存銀行資訊";
+    });
+  }
+  async function loadPayment() {
+    try {
+      const p = await getPayment();
+      document.getElementById("payBankName").value    = p.bankName || "";
+      document.getElementById("payBankCode").value    = p.bankCode || "";
+      document.getElementById("payAccountName").value = p.accountName || "";
+      document.getElementById("payBankAccount").value = p.bankAccount || "";
+      document.getElementById("payNote").value        = p.note || "";
+      if (p.bankAccount) {
+        document.getElementById("paymentStatus").textContent = "目前已設定，購物網會顯示這份資料";
+      } else {
+        document.getElementById("paymentStatus").innerHTML =
+          `<span style="color:var(--orange-deep)">⚠️ 尚未設定，購物網會提示客人「老闆還沒設定帳號」</span>`;
+      }
+    } catch (err) {
+      document.getElementById("paymentStatus").textContent = "載入失敗：" + err.message;
+    }
   }
 
   function renderList(elId, arr, onRemove) {

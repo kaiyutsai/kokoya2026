@@ -2,18 +2,20 @@
 // 果果家 KOKOYA · 共用頁殼 (TopBar / 權限守門 / Toast)
 // 每個頁面 import { mountShell } 即可
 // =====================================================
-import { auth, signOut, onAuthStateChanged } from "./firebase-config.js";
+import { auth, signOut, onAuthStateChanged, db, collection, query, where, onSnapshot } from "./firebase-config.js";
 import { getUserProfile, isAdmin } from "./users.js";
 
 const NAV = [
-  { href: "dashboard.html", label: "主控台",   icon: "🏠", key: "dashboard" },
-  { href: "batches.html",   label: "訂單批次", icon: "📋", key: "batches" },
-  { href: "sales.html",     label: "銷貨",     icon: "🛒", key: "sales" },
-  { href: "purchase.html",  label: "進貨",     icon: "📦", key: "purchase" },
-  { href: "items.html",     label: "品項清單", icon: "🍎", key: "items" },
-  { href: "shipping.html",  label: "出貨單",   icon: "🚚", key: "shipping" },
-  { href: "reports.html",   label: "報表",     icon: "📊", key: "reports" },
-  { href: "settings.html",  label: "設定",     icon: "⚙️", key: "settings", adminOnly: true },
+  { href: "dashboard.html",  label: "主控台",   icon: "🏠", key: "dashboard" },
+  { href: "web-orders.html", label: "網站訂單", icon: "📨", key: "web-orders" },
+  { href: "batches.html",    label: "訂單批次", icon: "📋", key: "batches" },
+  { href: "sales.html",      label: "銷貨",     icon: "🛒", key: "sales" },
+  { href: "purchase.html",   label: "進貨",     icon: "📦", key: "purchase" },
+  { href: "items.html",      label: "品項清單", icon: "🍎", key: "items" },
+  { href: "shipping.html",   label: "出貨單",   icon: "🚚", key: "shipping" },
+  { href: "reports.html",    label: "報表",     icon: "📊", key: "reports" },
+  { href: "articles.html",   label: "水果小教室", icon: "📚", key: "articles" },
+  { href: "settings.html",   label: "設定",     icon: "⚙️", key: "settings", adminOnly: true },
 ];
 
 export function mountShell({ active = "" } = {}) {
@@ -36,16 +38,64 @@ export function mountShell({ active = "" } = {}) {
 
       renderTopbar(user, profile, active);
       bindLogout();
+      watchNewWebOrders();
       window.__currentUser = { uid: user.uid, email: user.email, ...profile };
       resolve(window.__currentUser);
     });
   });
 }
 
+// 監聽新網站訂單，更新 nav 紅徽章 + 跳出通知
+let _wOrderUnsub = null;
+let _seenWebOrderIds = new Set();
+let _initialWebOrderLoad = true;
+function watchNewWebOrders() {
+  if (_wOrderUnsub) _wOrderUnsub();
+  try {
+    const q = query(collection(db, "webOrders"), where("status", "==", "new"));
+    _wOrderUnsub = onSnapshot(q, snap => {
+      const n = snap.size;
+      const $b = document.getElementById("navBadgeWebOrders");
+      if ($b) {
+        if (n > 0) { $b.textContent = n; $b.hidden = false; }
+        else       { $b.textContent = "";  $b.hidden = true; }
+      }
+      // 第一次載入不跳通知（避免重整就跳一堆）
+      if (_initialWebOrderLoad) {
+        snap.docs.forEach(d => _seenWebOrderIds.add(d.id));
+        _initialWebOrderLoad = false;
+        return;
+      }
+      // 真正的新增才跳
+      snap.docChanges().forEach(ch => {
+        if (ch.type === "added" && !_seenWebOrderIds.has(ch.doc.id)) {
+          _seenWebOrderIds.add(ch.doc.id);
+          const d = ch.doc.data();
+          toast(`📨 新訂單來了！${d.customer || "客人"} · $${(d.total||0).toLocaleString()}`, "ok");
+          // 簡單音效（用 Web Audio API beep）
+          try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.4);
+          } catch {}
+        }
+      });
+    });
+  } catch (err) {
+    console.warn("無法監聽網站訂單：", err);
+  }
+}
+
 function renderTopbar(user, profile, active) {
   const navItems = NAV.filter(n => !n.adminOnly || profile.role === "admin").map(n =>
     `<a href="${n.href}" class="${active===n.key?'active':''}">
-       <span class="ico">${n.icon}</span><span>${n.label}</span>
+       <span class="ico">${n.icon}</span><span>${n.label}${n.key==='web-orders'?' <span class="nav-badge" id="navBadgeWebOrders" hidden></span>':''}</span>
      </a>`).join("");
 
   // 上方 bar：左漢堡 + 中間 brand + 右使用者

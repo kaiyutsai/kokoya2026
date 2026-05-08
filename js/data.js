@@ -601,6 +601,137 @@ export async function confirmBatch(id) {
   return { allDone, successes, errors, orderCount: updatedOrders.length };
 }
 
+// ============ Articles (水果小教室部落格) ============
+// 每篇文章：title / slug / category（蘋果/水梨...）/ cover（圖片URL）/ excerpt / body（markdown）/ order / published / icon / tips
+export async function listArticles({ onlyPublished = false } = {}) {
+  const snap = await getDocs(query(collection(db, "articles"), orderBy("order", "asc")));
+  let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (onlyPublished) list = list.filter(a => a.published !== false);
+  return list;
+}
+
+export async function getArticle(id) {
+  const s = await getDoc(doc(db, "articles", id));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+
+export async function getArticleBySlug(slug) {
+  const snap = await getDocs(query(collection(db, "articles"), where("slug", "==", slug), limit(1)));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+export async function upsertArticle(id, data) {
+  const payload = {
+    title:    data.title    || "",
+    slug:     data.slug     || "",
+    category: data.category || "",
+    cover:    data.cover    || "",
+    icon:     data.icon     || "",
+    excerpt:  data.excerpt  || "",
+    body:     data.body     || "",
+    tips:     data.tips     || "",
+    order:    Number(data.order) || 0,
+    published: data.published !== false,
+    updatedAt: serverTimestamp(),
+    updatedBy: me().email
+  };
+  if (id) {
+    await updateDoc(doc(db, "articles", id), payload);
+    return id;
+  } else {
+    const ref = await addDoc(collection(db, "articles"), {
+      ...payload,
+      createdAt: serverTimestamp(),
+      createdBy: me().email
+    });
+    return ref.id;
+  }
+}
+
+export async function deleteArticle(id) {
+  await deleteDoc(doc(db, "articles", id));
+}
+
+// ============ Web Orders (購物網訂單) ============
+// 訪客從前端購物網送來的訂單，員工要確認 → 一鍵轉成 sale + shipment
+export async function listWebOrders({ status = null } = {}) {
+  // 不能同時 where + orderBy 不同欄位（要 composite index），改成只 orderBy 然後 client-side filter
+  const snap = await getDocs(query(collection(db, "webOrders"), orderBy("createdAt", "desc")));
+  let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (status) list = list.filter(o => (o.status || "new") === status);
+  return list;
+}
+
+export function watchWebOrders(cb) {
+  return onSnapshot(query(collection(db, "webOrders"), orderBy("createdAt", "desc")), snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export async function getWebOrder(id) {
+  const s = await getDoc(doc(db, "webOrders", id));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+
+// 一鍵把 webOrder 轉成 sale + shipment（庫存自動扣）
+// 跑完 webOrder 會更新 status/saleId/shipmentId
+export async function convertWebOrderToSaleShipment(webOrderId) {
+  const w = await getWebOrder(webOrderId);
+  if (!w) throw new Error("找不到網站訂單");
+  if (w.saleId) throw new Error("這筆訂單已經建過銷貨單");
+
+  // 過濾沒有 itemId 的 line（避免 transaction 失敗）
+  const validLines = (w.lines || []).filter(l => l.itemId && Number(l.qty) > 0);
+  if (!validLines.length) throw new Error("訂單中沒有有效的品項");
+
+  // 建銷貨單（會扣庫存）
+  const saleId = await addSale({
+    date: w.createdAt?.toDate ? w.createdAt.toDate() : new Date(),
+    customer: w.customer,
+    note: `[購物網訂單] ${w.note || ""}`.trim(),
+    lines: validLines.map(l => ({ itemId: l.itemId, name: l.name, qty: l.qty, price: l.price })),
+    handlerName: me().name
+  });
+
+  // 建出貨單
+  const ship = await addShipment({
+    date: w.createdAt?.toDate ? w.createdAt.toDate() : new Date(),
+    recipient: w.customer,
+    phone: w.phone || "",
+    address: w.address || "",
+    handlerName: me().name,
+    note: `[購物網] ${w.method || ""} ${w.note || ""}`.trim(),
+    lines: validLines.map(l => ({ itemId: l.itemId, name: l.name, unit: l.unit || "", qty: l.qty, price: l.price }))
+  });
+
+  // 更新 webOrder
+  await updateDoc(doc(db, "webOrders", webOrderId), {
+    status: "processing",
+    saleId,
+    shipmentId: ship.id,
+    shipmentNo: ship.docNo,
+    processedAt: serverTimestamp(),
+    processedBy: me().email,
+    processedByName: me().name
+  });
+
+  return { saleId, shipmentId: ship.id, shipmentNo: ship.docNo };
+}
+
+export async function updateWebOrderStatus(id, patch) {
+  await updateDoc(doc(db, "webOrders", id), {
+    ...patch,
+    updatedAt: serverTimestamp(),
+    updatedBy: me().email
+  });
+}
+
+export async function deleteWebOrder(id) {
+  await deleteDoc(doc(db, "webOrders", id));
+}
+
 // ============ Settings / Lookups (共用下拉資料) ============
 // 單一文件 settings/lookups，含 suppliers / deliveryStaff 等陣列
 const LOOKUPS_REF = () => doc(db, "settings", "lookups");
@@ -646,6 +777,27 @@ export async function getSecrets() {
 export async function saveSecrets(data) {
   await setDoc(SECRETS_REF(), {
     geminiApiKey: data.geminiApiKey || "",
+    updatedAt: serverTimestamp(),
+    updatedBy: me().email
+  }, { merge: true });
+}
+
+// ============ Payment（銀行帳號等，購物網會公開顯示） ============
+const PAYMENT_REF = () => doc(db, "settings", "payment");
+
+export async function getPayment() {
+  const s = await getDoc(PAYMENT_REF());
+  if (!s.exists()) return { bankName: "", bankCode: "", accountName: "", bankAccount: "", note: "" };
+  return s.data();
+}
+
+export async function savePayment(data) {
+  await setDoc(PAYMENT_REF(), {
+    bankName:    data.bankName    || "",
+    bankCode:    data.bankCode    || "",
+    accountName: data.accountName || "",
+    bankAccount: data.bankAccount || "",
+    note:        data.note        || "",
     updatedAt: serverTimestamp(),
     updatedBy: me().email
   }, { merge: true });

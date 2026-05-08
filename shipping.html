@@ -517,7 +517,7 @@ ${docHTML}
             <div class="sub">SHIPPING NOTE</div>
           </div>
           <div style="text-align:right">
-            <img class="head-logo" src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:180px" alt="果果家 KOKOYA">
+            <img class="head-logo" src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:270px" alt="果果家 KOKOYA">
           </div>
         </div>
 
@@ -526,7 +526,8 @@ ${docHTML}
           <div><div class="lbl">訂購日期</div><div class="val">${fmt.date(s.date)}</div></div>
           <div><div class="lbl">收貨人</div><div class="val">${s.recipient||"—"}</div></div>
           ${hasPhone ? `<div><div class="lbl">聯絡電話</div><div class="val">${s.phone}</div></div>` : ""}
-          ${hasAddress ? `<div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address}</div></div>` : ""}
+          ${hasAddress ? `<div style="grid-column:1/3"><div class="lbl">收貨地址</div><div class="val">${s.address}</div></div>` : ""}
+          ${qrHtml ? `<div class="meta-qr-cell">${qrHtml}</div>` : ""}
         </div>
 
         <table>
@@ -541,14 +542,11 @@ ${docHTML}
           <div class="grand">總計　${fmt.money(s.total)}</div>
         </div>
 
-        ${showNote ? `<div class="doc-note" style="margin-top:18px;padding:10px 14px;border-left:3px solid var(--orange);background:var(--paper-2);border-radius:0 8px 8px 0;font-size:.92rem">備註：${s.note}</div>` : ""}
+        ${showNote ? `<div class="doc-note" style="margin-top:18px;padding:10px 14px;border-left:3px solid var(--orange);background:var(--paper-2);border-radius:0 8px 8px 0;font-size:1rem">備註：${s.note}</div>` : ""}
 
         <div class="thanks">
           <div class="msg">🍎 感謝您的購買 ❤️ 果果家 KOKOYA 感謝您 🍎</div>
           <div class="sub">新鮮直送 · 用心挑選 · 期待再次相遇</div>
-          <div class="thanks-footer">
-            ${qrHtml}
-          </div>
         </div>
       </div>`;
   }

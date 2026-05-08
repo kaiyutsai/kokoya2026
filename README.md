@@ -1,6 +1,10 @@
-# 果果家 KOKOYA · 水果攤記帳銷貨系統
+# 🏪 果果家 KOKOYA · 後台記帳銷貨系統（給員工用）
+
+> 這是「員工使用的後台」— 不是給客人看的購物網！
+> 客人逛的購物網在另一個資料夾：`KOKOYA/上傳GitHub_購物網/`
 
 純前端網站（HTML/CSS/JS）+ Firebase（Auth + Firestore），可直接託管在 GitHub Pages。
+**需要 Google 登入**，僅限白名單 4 位成員（凱宇、凱帆、妍慧、于真）使用。
 
 ## 功能總覽
 
