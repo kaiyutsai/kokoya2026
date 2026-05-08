@@ -89,7 +89,7 @@
           <button type="button" class="btn ghost" id="btnCancelEdit" style="margin-left:10px;padding:4px 10px;font-size:.78rem">取消編輯</button>
         </div>
         <div class="row-fields">
-          <div class="field"><label>出貨日期</label><input type="date" class="input" id="fDate" required></div>
+          <div class="field"><label>訂購日期</label><input type="date" class="input" id="fDate" required></div>
           <div class="field"><label>經辦人員</label><select class="select" id="fHandler"></select></div>
         </div>
         <div class="row-fields">
@@ -519,7 +519,7 @@ ${docHTML}
 
         <div class="meta">
           <div><div class="lbl">單號</div><div class="val">${s.docNo}</div></div>
-          <div><div class="lbl">出貨日期</div><div class="val">${fmt.date(s.date)}</div></div>
+          <div><div class="lbl">訂購日期</div><div class="val">${fmt.date(s.date)}</div></div>
           <div><div class="lbl">收貨人</div><div class="val">${s.recipient||"—"}</div></div>
           ${hasPhone ? `<div><div class="lbl">聯絡電話</div><div class="val">${s.phone}</div></div>` : ""}
           ${hasAddress ? `<div style="grid-column:1/-1"><div class="lbl">收貨地址</div><div class="val">${s.address}</div></div>` : ""}
@@ -544,7 +544,6 @@ ${docHTML}
           <div class="sub">新鮮直送 · 用心挑選 · 期待再次相遇</div>
           <div class="thanks-footer">
             ${qrHtml}
-            <div class="handler" style="margin:0">出貨日期：${fmt.date(s.date)}</div>
           </div>
         </div>
       </div>`;

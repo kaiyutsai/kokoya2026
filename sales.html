@@ -47,9 +47,11 @@
 
   <section class="card" style="margin-top:18px">
     <div class="card-h">
-      <h2>📒 近 30 天銷貨</h2>
-      <div class="flex">
-        <input class="input" id="kw" placeholder="🔍 搜尋客人/品項" style="width:220px">
+      <h2>📒 銷貨歷史 <span class="muted" id="hCount" style="font-size:.82rem;font-weight:400"></span></h2>
+      <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <select class="select" id="fMonth" style="width:140px"><option value="">全部月份</option></select>
+        <select class="select" id="fItem" style="width:160px"><option value="">全部品項</option></select>
+        <input class="input" id="kw" placeholder="🔍 搜尋客人/品項" style="width:180px">
       </div>
     </div>
     <div class="table-wrap">
@@ -288,16 +290,67 @@
   });
 
   async function reload() {
-    salesCache = await listSales({ days: 30 });
+    salesCache = await listSales({ days: null });   // 全部歷史
+    refreshFilters();
     render();
   }
+
+  // 從 cache 動態抓出有資料的月份/品項，組成下拉選項
+  function refreshFilters() {
+    // 月份（依資料）
+    const months = new Set();
+    salesCache.forEach(s => {
+      const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+      months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    });
+    const sortedMonths = [...months].sort().reverse();
+    const $fMonth = document.getElementById("fMonth");
+    const curMonth = $fMonth.value;
+    $fMonth.innerHTML = `<option value="">全部月份</option>` +
+      sortedMonths.map(m => `<option value="${m}">${m}</option>`).join("");
+    if (sortedMonths.includes(curMonth)) $fMonth.value = curMonth;
+
+    // 品項（依銷貨資料中出現的品項）
+    const itemMap = new Map();
+    salesCache.forEach(s => (s.lines||[]).forEach(l => {
+      if (l.itemId) {
+        const cur = items.find(i => i.id === l.itemId)?.name || l.name || "(已刪除品項)";
+        itemMap.set(l.itemId, cur);
+      }
+    }));
+    const sortedItems = [...itemMap.entries()].sort((a,b) => (a[1]||"").localeCompare(b[1]||"", "zh-Hant"));
+    const $fItem = document.getElementById("fItem");
+    const curItem = $fItem.value;
+    $fItem.innerHTML = `<option value="">全部品項</option>` +
+      sortedItems.map(([id, name]) => `<option value="${id}">${name}</option>`).join("");
+    if (sortedItems.some(([id]) => id === curItem)) $fItem.value = curItem;
+  }
+
   function render() {
     const kw = $kw.value.trim();
+    const month  = document.getElementById("fMonth").value;
+    const itemId = document.getElementById("fItem").value;
     let list = salesCache;
+    if (month) {
+      list = list.filter(s => {
+        const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+        const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+        return ym === month;
+      });
+    }
+    if (itemId) {
+      list = list.filter(s => (s.lines||[]).some(l => l.itemId === itemId));
+    }
     if (kw) list = list.filter(s => (s.customer||"").includes(kw)
       || (s.lines||[]).some(l => (l.name||"").includes(kw)));
+
+    const totalAmt = list.reduce((a,b)=>a+(b.total||0), 0);
+    document.getElementById("hCount").textContent = list.length
+      ? `· ${list.length} 筆 · 共 ${fmt.money(totalAmt)}`
+      : "";
+
     if (!list.length) {
-      $rows.innerHTML = `<tr><td colspan="7" class="empty">尚無銷貨紀錄</td></tr>`;
+      $rows.innerHTML = `<tr><td colspan="7" class="empty">無符合條件的銷貨</td></tr>`;
       return;
     }
     $rows.innerHTML = list.map(s => `
@@ -315,6 +368,8 @@
       </tr>`).join("");
   }
   $kw.addEventListener("input", render);
+  document.getElementById("fMonth").addEventListener("change", render);
+  document.getElementById("fItem").addEventListener("change", render);
   $rows.addEventListener("click", async e => {
     const editId = e.target.closest("[data-edit]")?.dataset.edit;
     const delId  = e.target.closest("[data-del]")?.dataset.del;

@@ -132,13 +132,14 @@ export async function addSale(sale) {
   });
 }
 export async function listSales({ days = 30 } = {}){
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const snap = await getDocs(query(
-    collection(db, "sales"),
-    where("date", ">=", Timestamp.fromDate(since)),
-    orderBy("date", "desc")
-  ));
+  // days = null / 0 → 撈全部歷史
+  const constraints = [orderBy("date", "desc")];
+  if (days != null && days > 0) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    constraints.unshift(where("date", ">=", Timestamp.fromDate(since)));
+  }
+  const snap = await getDocs(query(collection(db, "sales"), ...constraints));
   return snap.docs.map(d=>({ id:d.id, ...d.data() }));
 }
 export async function deleteSale(id) {
