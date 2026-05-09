@@ -78,61 +78,83 @@
 </head>
 <body>
 <main class="container no-print">
-  <div class="grid cols-2">
-    <section class="card">
-      <div class="card-h"><h2>🚚 開立出貨單</h2></div>
-      <form id="form" novalidate>
-        <div id="editIndicator" class="hidden" style="margin-bottom:10px;padding:8px 12px;background:#FFF6E6;border-left:3px solid var(--orange);border-radius:0 8px 8px 0;font-size:.9rem">
-          ✏️ 正在編輯：<b id="editTo"></b>（單號 <span id="editDocNo"></span>）
-          <button type="button" class="btn ghost" id="btnCancelEdit" style="margin-left:10px;padding:4px 10px;font-size:.78rem">取消編輯</button>
-        </div>
-        <div class="row-fields">
-          <div class="field"><label>訂購日期</label><input type="date" class="input" id="fDate" required></div>
-          <div class="field"><label>經辦人員</label><select class="select" id="fHandler"></select></div>
-        </div>
-        <div class="row-fields">
-          <div class="field"><label>收貨人 *</label><input class="input" id="fTo" required placeholder="例：王太太"></div>
-          <div class="field"><label>聯絡電話</label><input class="input" id="fPhone" placeholder="0912-345-678"></div>
-        </div>
-        <div class="field"><label>收貨地址 *</label><input class="input" id="fAddr" required placeholder="例：高雄市鳳山區中山路 100 號"></div>
 
-        <h3 style="margin-top:6px">出貨明細</h3>
-        <div id="lines"></div>
-        <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+  <!-- ========= 上方：出貨單列表（預設近 60 天，可選月份） ========= -->
+  <section class="card">
+    <div class="card-h">
+      <h2>📒 出貨單列表 <span class="muted" id="listSummary" style="font-size:.84rem;font-weight:400"></span></h2>
+      <button class="btn primary" id="btnNewShipment">＋ 開立新出貨單</button>
+    </div>
 
-        <div class="field" style="margin-top:14px"><label>備註 / 配送方式</label><textarea class="textarea" id="fNote" placeholder="例：宅配當日、貨到付款、易碎請小心…"></textarea></div>
+    <div class="flex" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <select class="select" id="monthFilter" style="width:160px">
+        <option value="60" selected>近 60 天</option>
+        <option value="30">近 30 天</option>
+        <option value="90">近 90 天</option>
+        <option value="all">全部歷史</option>
+        <!-- JS 會動態加入有資料的月份 -->
+      </select>
+      <input class="input" id="kw" placeholder="🔍 搜尋收貨人/單號" style="width:220px">
+      <span class="muted" id="selCount" style="margin-left:auto;align-self:center">勾選 0 張</span>
+      <button class="btn primary" id="btnBulkPdf" disabled>📄 下載 PDF (一頁兩張)</button>
+    </div>
 
-        <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px">
-          <div class="muted">合計</div>
-          <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="total">$0</div>
-        </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr>
+          <th style="width:34px"><input type="checkbox" id="checkAll" title="全選"></th>
+          <th>單號</th><th>日期</th><th>收貨人</th><th class="num">金額</th><th></th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 
-        <div class="flex" style="justify-content:flex-end;margin-top:14px">
-          <button type="reset" class="btn ghost" id="btnReset">清空</button>
-          <button type="submit" class="btn tomato" id="btnSubmit">💾 建立並預覽列印</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="card">
-      <div class="card-h"><h2>📒 近 60 天出貨單</h2>
-        <input class="input" id="kw" placeholder="🔍 搜尋收貨人/單號" style="width:200px">
+  <!-- ========= 下方：開立出貨單表單（預設隱藏，按按鈕才出現） ========= -->
+  <section class="card hidden" id="formSection" style="margin-top:18px">
+    <div class="card-h">
+      <h2>🚚 開立出貨單</h2>
+      <button type="button" class="btn ghost" id="btnCloseForm">✕ 關閉表單</button>
+    </div>
+    <form id="form" novalidate>
+      <div id="editIndicator" class="hidden" style="margin-bottom:10px;padding:8px 12px;background:#FFF6E6;border-left:3px solid var(--orange);border-radius:0 8px 8px 0;font-size:.9rem">
+        ✏️ 正在編輯：<b id="editTo"></b>（單號 <span id="editDocNo"></span>）
+        <button type="button" class="btn ghost" id="btnCancelEdit" style="margin-left:10px;padding:4px 10px;font-size:.78rem">取消編輯</button>
       </div>
-      <div class="flex" style="margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <span class="muted" id="selCount">勾選 0 張</span>
-        <button class="btn primary" id="btnBulkPdf" disabled style="margin-left:auto">📄 下載 PDF (一頁兩張)</button>
+      <div class="row-fields">
+        <div class="field"><label>訂購日期</label><input type="date" class="input" id="fDate" required></div>
+        <div class="field"><label>經辦人員</label><select class="select" id="fHandler"></select></div>
       </div>
-      <div class="table-wrap">
-        <table class="tb">
-          <thead><tr>
-            <th style="width:34px"><input type="checkbox" id="checkAll" title="全選"></th>
-            <th>單號</th><th>日期</th><th>收貨人</th><th class="num">金額</th><th></th>
-          </tr></thead>
-          <tbody id="rows"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
-        </table>
+      <div class="row-fields">
+        <div class="field"><label>收貨人 *</label><input class="input" id="fTo" required placeholder="例:王太太"></div>
+        <div class="field"><label>聯絡電話</label><input class="input" id="fPhone" placeholder="0912-345-678"></div>
       </div>
-    </section>
-  </div>
+      <div class="field"><label>收貨地址 *</label><input class="input" id="fAddr" required placeholder="例:高雄市鳳山區中山路 100 號"></div>
+
+      <h3 style="margin-top:6px">出貨明細</h3>
+      <div id="lines"></div>
+      <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+      <div class="field" style="margin-top:14px"><label>備註 / 配送方式</label><textarea class="textarea" id="fNote" placeholder="例:宅配當日、貨到付款、易碎請小心…"></textarea></div>
+
+      <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px">
+        <div class="muted">合計</div>
+        <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="total">$0</div>
+      </div>
+
+      <!-- 重複單警示框 -->
+      <div id="dupWarn" class="hidden" style="margin-top:14px;padding:14px 16px;background:#FFF0E0;border:1px solid var(--orange);border-radius:var(--r-md)">
+        <div style="font-weight:700;color:var(--orange-deep);margin-bottom:6px">⚠️ 偵測到可能的重複出貨單</div>
+        <div id="dupList" style="font-size:.92rem;line-height:1.7;color:var(--ink-2)"></div>
+        <div style="margin-top:8px;font-size:.86rem;color:var(--ink-3)">仍要建立請點下方「💾 確認建立（仍要送出）」；要修改請改編輯舊單。</div>
+      </div>
+
+      <div class="flex" style="justify-content:flex-end;margin-top:14px;gap:8px">
+        <button type="reset" class="btn ghost" id="btnReset">清空</button>
+        <button type="submit" class="btn tomato" id="btnSubmit">💾 建立並預覽列印</button>
+      </div>
+    </form>
+  </section>
 </main>
 
 <!-- 列印預覽區 -->
@@ -237,6 +259,33 @@
   document.getElementById("btnAddLine").addEventListener("click", addLine);
   addLine();
 
+  // ----- 重複單偵測 -----
+  // 同收貨人 + 日期 ±3 天 + 總額相近 → 提示
+  let _ignoreDupCheck = false;   // user 看過警告後再按一次就略過
+
+  function findPossibleDuplicates(payload) {
+    if (editingId) return [];   // 編輯模式不檢查
+    const targetName = (payload.recipient || "").trim().toLowerCase();
+    if (!targetName) return [];
+    const targetTotal = (payload.lines || []).reduce((s,l) => s + l.qty*l.price, 0);
+    const targetDate = payload.date instanceof Date ? payload.date : new Date(payload.date);
+    const targetTime = targetDate.getTime();
+    const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+
+    return cache.filter(s => {
+      const recip = (s.recipient || "").trim().toLowerCase();
+      if (!recip || recip !== targetName) return false;
+      const sd = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+      if (isNaN(sd)) return false;
+      if (Math.abs(sd.getTime() - targetTime) > THREE_DAYS) return false;
+      // 金額差距 < 15% 算可能重複
+      const sTotal = Number(s.total) || 0;
+      if (sTotal === 0 && targetTotal === 0) return true;
+      const diff = Math.abs(sTotal - targetTotal) / Math.max(sTotal, targetTotal, 1);
+      return diff < 0.15;
+    });
+  }
+
   document.getElementById("form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const lines = [...$lines.querySelectorAll(".line-row")].map(r => ({
@@ -258,6 +307,32 @@
       lines
     };
 
+    // 偵測可能的重複單（編輯模式不檢查；使用者按過一次警告就放行）
+    if (!editingId && !_ignoreDupCheck) {
+      const dups = findPossibleDuplicates(payload);
+      if (dups.length) {
+        const $warn = document.getElementById("dupWarn");
+        document.getElementById("dupList").innerHTML = dups.map(d => {
+          const dt = d.date?.toDate ? d.date.toDate() : new Date(d.date);
+          return `• <b>${d.docNo}</b> · ${fmt.date(dt)} · ${d.recipient} · ${fmt.money(d.total)}
+                  &nbsp;<a href="#" data-jump-edit="${d.id}" style="color:var(--orange-deep)">[檢視/編輯]</a>`;
+        }).join("<br>");
+        $warn.classList.remove("hidden");
+        // 綁定「檢視/編輯」連結
+        $warn.querySelectorAll("[data-jump-edit]").forEach(a => {
+          a.addEventListener("click", evt => {
+            evt.preventDefault();
+            const s = cache.find(x => x.id === a.dataset.jumpEdit);
+            if (s) enterEditMode(s);
+          });
+        });
+        _ignoreDupCheck = true;   // 下次再按 submit 就放行
+        toast("⚠️ 偵測到可能的重複出貨單，請確認", "err");
+        $warn.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+    }
+
     try {
       let docId, docNoMsg;
       if (editingId) {
@@ -271,10 +346,21 @@
         docNoMsg = r.docNo;
         toast(`✓ 出貨單 ${docNoMsg} 已建立`, "ok");
       }
+      _ignoreDupCheck = false;
+      document.getElementById("dupWarn").classList.add("hidden");
       exitEditMode();
+      hideForm();
       reload();
       previewDoc(docId);
     } catch (err) { console.error(err); toast((editingId ? "更新" : "建立") + "失敗：" + err.message, "err"); }
+  });
+
+  // 表單欄位變動時，清除「已忽略重複警告」狀態 → 重新檢查
+  ["fTo", "fDate", "fHandler"].forEach(id => {
+    document.getElementById(id).addEventListener("input", () => {
+      _ignoreDupCheck = false;
+      document.getElementById("dupWarn").classList.add("hidden");
+    });
   });
 
   // ----- 編輯模式 -----
@@ -329,17 +415,68 @@
     $lines.innerHTML = ""; addLine();
   }
 
-  // 載入清單
+  // 載入清單（全部歷史，client 端篩選）
   async function reload() {
-    cache = await listShipments({ days: 60 });
+    cache = await listShipments({ days: null });
+    refreshMonthFilter();
     render();
   }
+
+  // 從 cache 動態抓出月份清單，加到下拉
+  function refreshMonthFilter() {
+    const $sel = document.getElementById("monthFilter");
+    const cur  = $sel.value;
+    // 抓出資料中所有的 YYYY-MM
+    const months = new Set();
+    cache.forEach(s => {
+      const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+      if (!isNaN(d)) months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    });
+    const sortedMonths = [...months].sort().reverse();
+    $sel.innerHTML = `
+      <option value="60">近 60 天</option>
+      <option value="30">近 30 天</option>
+      <option value="90">近 90 天</option>
+      <option value="all">全部歷史</option>
+      ${sortedMonths.length ? `<optgroup label="按月份">${sortedMonths.map(m => `<option value="m:${m}">${m}</option>`).join("")}</optgroup>` : ""}
+    `;
+    // 還原使用者選擇（如果還在）
+    if ([...$sel.options].some(o => o.value === cur)) $sel.value = cur;
+    else $sel.value = "60";
+  }
+
   function render() {
     const kw = $kw.value.trim();
+    const filter = document.getElementById("monthFilter").value;
     let list = cache;
+
+    // 月份/天數過濾
+    if (filter.startsWith("m:")) {
+      const m = filter.slice(2);  // "2026-05"
+      list = list.filter(s => {
+        const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+        if (isNaN(d)) return false;
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}` === m;
+      });
+    } else if (filter !== "all") {
+      const days = Number(filter) || 60;
+      const since = new Date(); since.setDate(since.getDate() - days);
+      list = list.filter(s => {
+        const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+        return !isNaN(d) && d >= since;
+      });
+    }
+
+    // 關鍵字過濾
     if (kw) list = list.filter(s => (s.recipient||"").includes(kw) || (s.docNo||"").includes(kw));
+
+    // 摘要
+    const total = list.reduce((a,b)=>a+(b.total||0), 0);
+    document.getElementById("listSummary").textContent =
+      list.length ? `· ${list.length} 筆 · 共 ${fmt.money(total)}` : "";
+
     if (!list.length) {
-      $rows.innerHTML = `<tr><td colspan="6" class="empty">尚無紀錄</td></tr>`;
+      $rows.innerHTML = `<tr><td colspan="6" class="empty">尚無符合條件的出貨單</td></tr>`;
       updateSelCount();
       return;
     }
@@ -372,13 +509,32 @@
     if (e.target.matches("[data-sel]")) updateSelCount();
   });
   $kw.addEventListener("input", render);
+  document.getElementById("monthFilter").addEventListener("change", render);
+
+  // ----- 顯示/隱藏 表單 -----
+  const $formSection = document.getElementById("formSection");
+  function showForm() {
+    $formSection.classList.remove("hidden");
+    document.getElementById("dupWarn").classList.add("hidden");
+    setTimeout(() => $formSection.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+  function hideForm() {
+    $formSection.classList.add("hidden");
+    exitEditMode();
+    resetForm();
+    document.getElementById("dupWarn").classList.add("hidden");
+  }
+  document.getElementById("btnNewShipment").addEventListener("click", showForm);
+  document.getElementById("btnCloseForm").addEventListener("click", hideForm);
+
   $rows.addEventListener("click", async (e) => {
     const view = e.target.closest("[data-view]")?.dataset.view;
     const del  = e.target.closest("[data-del]")?.dataset.del;
     const edit = e.target.closest("[data-edit]")?.dataset.edit;
     if (edit) {
       const s = cache.find(x => x.id === edit);
-      if (s) enterEditMode(s); else toast("找不到該筆出貨單", "err");
+      if (s) { showForm(); enterEditMode(s); }
+      else toast("找不到該筆出貨單", "err");
       return;
     }
     if (view) previewDoc(view);
@@ -516,8 +672,8 @@ ${docHTML}
             <div class="title">出 貨 單</div>
             <div class="sub">SHIPPING NOTE</div>
           </div>
-          <div style="text-align:right">
-            <img class="head-logo" src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:270px" alt="果果家 KOKOYA">
+          <div style="display:flex;align-items:flex-start">
+            <img class="head-logo" src="assets/logo-clean.png" onerror="this.onerror=null;this.src='assets/logo-fallback.svg';" style="height:130px;display:block;margin-top:-6px" alt="果果家 KOKOYA">
           </div>
         </div>
 

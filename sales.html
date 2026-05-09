@@ -10,11 +10,49 @@
 </head>
 <body>
 <main class="container">
+
+  <!-- ========= 銷售統計表（最上面，3 層樹狀展開） ========= -->
   <section class="card">
+    <div class="card-h">
+      <h2>📊 銷售統計表 <span class="muted" id="statsHint" style="font-size:.82rem;font-weight:400">點 ▸ 展開分類，再展開看品項與售出方式</span></h2>
+      <select class="select" id="statsMonth" style="width:160px">
+        <option value="">全部月份</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table class="tb" id="statsTable">
+        <thead><tr><th style="width:34px"></th><th>分類 / 品項 / 售出方式</th><th class="num">售出量</th><th class="num">營收</th></tr></thead>
+        <tbody id="statsBody"><tr><td colspan="4" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ========= 銷貨歷史 ========= -->
+  <section class="card" style="margin-top:18px">
+    <div class="card-h">
+      <h2>📒 銷貨歷史 <span class="muted" id="hCount" style="font-size:.82rem;font-weight:400"></span></h2>
+      <div class="flex" style="gap:8px;flex-wrap:wrap">
+        <select class="select" id="fMonth" style="width:140px"><option value="">全部月份</option></select>
+        <select class="select" id="fItem" style="width:160px"><option value="">全部品項</option></select>
+        <input class="input" id="kw" placeholder="🔍 搜尋客人/品項" style="width:180px">
+        <button class="btn primary" id="btnNewSale">＋ 新增銷貨單</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>日期</th><th>單號</th><th>客人</th><th>品項</th><th class="num">合計</th><th>經辦</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="7" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ========= 新增/編輯銷貨單表單（預設隱藏） ========= -->
+  <section class="card hidden" id="formSection" style="margin-top:18px">
     <div class="card-h">
       <h2>🛒 新增銷貨單
         <button type="button" class="btn ghost icon-only" id="btnHelp" title="操作說明" style="margin-left:8px;font-size:1rem">❓</button>
       </h2>
+      <button type="button" class="btn ghost" id="btnCloseForm">✕ 關閉表單</button>
     </div>
     <form id="form" novalidate>
       <div class="row-fields">
@@ -43,23 +81,6 @@
         <button type="submit" class="btn primary" id="btnSubmit">💾 儲存銷貨單</button>
       </div>
     </form>
-  </section>
-
-  <section class="card" style="margin-top:18px">
-    <div class="card-h">
-      <h2>📒 銷貨歷史 <span class="muted" id="hCount" style="font-size:.82rem;font-weight:400"></span></h2>
-      <div class="flex" style="gap:8px;flex-wrap:wrap">
-        <select class="select" id="fMonth" style="width:140px"><option value="">全部月份</option></select>
-        <select class="select" id="fItem" style="width:160px"><option value="">全部品項</option></select>
-        <input class="input" id="kw" placeholder="🔍 搜尋客人/品項" style="width:180px">
-      </div>
-    </div>
-    <div class="table-wrap">
-      <table class="tb">
-        <thead><tr><th>日期</th><th>單號</th><th>客人</th><th>品項</th><th class="num">合計</th><th>經辦</th><th></th></tr></thead>
-        <tbody id="rows"><tr><td colspan="7" class="empty">載入中…</td></tr></tbody>
-      </table>
-    </div>
   </section>
 </main>
 
@@ -220,11 +241,7 @@
         await addSale(payload);
         toast("✓ 銷貨單已儲存，庫存已扣除", "ok");
       }
-      exitEditMode();
-      $form.reset();
-      document.getElementById("fDate").value = fmt.dateInput(new Date());
-      document.getElementById("fHandler").value = me.name;
-      $lines.innerHTML = ""; addLine();
+      hideForm();
       items = await listItems();
       reload();
     } catch (err) {
@@ -292,8 +309,174 @@
   async function reload() {
     salesCache = await listSales({ days: null });   // 全部歷史
     refreshFilters();
+    refreshStatsMonth();
+    renderStats();
     render();
   }
+
+  // ========= 銷售統計表 (3 層樹狀展開) =========
+  // 反推每筆 sale.line 用的 priceTier；無對應就視為「單{unit}」
+  function detectTier(line, item) {
+    const qty   = Number(line.qty)   || 0;
+    const price = Number(line.price) || 0;
+    const unit  = item?.unit || "件";
+    const tiers = Array.isArray(item?.priceTiers) ? item.priceTiers : [];
+    for (const t of tiers) {
+      const tq = Number(t.qty);
+      const tp = Number(t.price);
+      if (tq <= 0 || tp <= 0) continue;
+      const tierUnitPrice = tp / tq;
+      if (qty % tq === 0 && Math.abs(price - tierUnitPrice) < 1) {
+        const groups = qty / tq;
+        const label = t.label || `${tq}${unit}組`;
+        return { label, tierQty: tq, tierPrice: tp, groups };
+      }
+    }
+    return { label: `單${unit}`, tierQty: 1, tierPrice: price, groups: qty };
+  }
+
+  function refreshStatsMonth() {
+    const months = new Set();
+    salesCache.forEach(s => {
+      const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+      if (!isNaN(d)) months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    });
+    const sorted = [...months].sort().reverse();
+    const $sel = document.getElementById("statsMonth");
+    const cur = $sel.value;
+    $sel.innerHTML = `<option value="">全部月份</option>` +
+      sorted.map(m => `<option value="${m}">${m}</option>`).join("");
+    if (sorted.includes(cur)) $sel.value = cur;
+  }
+
+  function renderStats() {
+    const month = document.getElementById("statsMonth").value;
+    let list = salesCache;
+    if (month) {
+      list = list.filter(s => {
+        const d = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}` === month;
+      });
+    }
+
+    const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
+    // 三層樹：分類 → 品項 → 售出方式
+    const tree = {};   // { catName: { items: { itemId: { name, unit, qty, rev, tiers: { key: {label, qty, groups, rev} } } } } }
+    list.forEach(s => (s.lines || []).forEach(l => {
+      const item = itemMap[l.itemId];
+      const cat  = item?.category || "未分類";
+      const itemId = l.itemId || `__name__${l.name||"未知"}`;
+      const name = item?.name || l.name || "(已刪除品項)";
+      const unit = item?.unit || "";
+      const lineRev = Number(l.lineTotal) || (Number(l.qty)*Number(l.price)) || 0;
+
+      if (!tree[cat]) tree[cat] = { qty: 0, rev: 0, items: {} };
+      if (!tree[cat].items[itemId]) tree[cat].items[itemId] = { name, unit, qty: 0, rev: 0, tiers: {} };
+
+      tree[cat].qty += Number(l.qty) || 0;
+      tree[cat].rev += lineRev;
+      tree[cat].items[itemId].qty += Number(l.qty) || 0;
+      tree[cat].items[itemId].rev += lineRev;
+
+      const tier = detectTier(l, item);
+      const tk = `${tier.label}@${tier.tierPrice}`;
+      if (!tree[cat].items[itemId].tiers[tk]) {
+        tree[cat].items[itemId].tiers[tk] = { label: tier.label, tierPrice: tier.tierPrice, groups: 0, totalQty: 0, rev: 0 };
+      }
+      tree[cat].items[itemId].tiers[tk].groups += tier.groups;
+      tree[cat].items[itemId].tiers[tk].totalQty += Number(l.qty) || 0;
+      tree[cat].items[itemId].tiers[tk].rev += lineRev;
+    }));
+
+    const $body = document.getElementById("statsBody");
+    const cats = Object.entries(tree).sort((a,b) => b[1].rev - a[1].rev);
+    if (!cats.length) {
+      $body.innerHTML = `<tr><td colspan="4" class="empty">${month ? `${month} 沒有銷售紀錄` : "尚無銷售紀錄"}</td></tr>`;
+      return;
+    }
+    let html = "";
+    cats.forEach((catEntry, ci) => {
+      const [catName, catData] = catEntry;
+      const catId = `cat-${ci}`;
+      html += `<tr class="stats-cat" data-toggle="${catId}" style="cursor:pointer;background:#FFF6E6">
+        <td><span class="exp-arrow">▸</span></td>
+        <td><b>📦 ${catName}</b></td>
+        <td class="num"><b>${fmt.num(catData.qty)}</b></td>
+        <td class="num"><b>${fmt.money(catData.rev)}</b></td>
+      </tr>`;
+      const itemsArr = Object.entries(catData.items).sort((a,b) => b[1].rev - a[1].rev);
+      itemsArr.forEach(([iid, idata], ii) => {
+        const itemId = `${catId}-i${ii}`;
+        html += `<tr class="stats-item child-of-${catId}" data-toggle="${itemId}" style="cursor:pointer;display:none">
+          <td></td>
+          <td style="padding-left:30px">▸ ${idata.name}</td>
+          <td class="num">${fmt.num(idata.qty)} ${idata.unit||""}</td>
+          <td class="num">${fmt.money(idata.rev)}</td>
+        </tr>`;
+        const tiersArr = Object.values(idata.tiers).sort((a,b) => b.rev - a.rev);
+        tiersArr.forEach(t => {
+          html += `<tr class="stats-tier child-of-${catId} child-of-${itemId}" style="display:none;color:var(--ink-3)">
+            <td></td>
+            <td style="padding-left:60px;font-size:.88rem">└ ${t.label}（單價 ${fmt.money(Math.round(t.tierPrice))}）</td>
+            <td class="num" style="font-size:.88rem">${fmt.num(t.groups)} 組 / ${fmt.num(t.totalQty)} ${idata.unit||""}</td>
+            <td class="num" style="font-size:.88rem">${fmt.money(t.rev)}</td>
+          </tr>`;
+        });
+      });
+    });
+    $body.innerHTML = html;
+
+    // 點擊展開
+    $body.querySelectorAll("[data-toggle]").forEach(tr => {
+      tr.addEventListener("click", () => {
+        const tid = tr.dataset.toggle;
+        const open = tr.classList.toggle("open");
+        const arrow = tr.querySelector(".exp-arrow");
+        if (arrow) arrow.textContent = open ? "▾" : "▸";
+        else {
+          // item 列：把開頭的 ▸ 換 ▾
+          const tdName = tr.cells[1];
+          if (tdName) tdName.innerHTML = tdName.innerHTML.replace(/^▸ |^▾ /, open ? "▾ " : "▸ ");
+        }
+        // 處理子元素顯示
+        if (tid.includes("-i")) {
+          // 是 item 列 → 切 tier
+          $body.querySelectorAll(`.child-of-${tid}`).forEach(sub => sub.style.display = open ? "" : "none");
+        } else {
+          // 是 cat 列 → 切 item，但 tier 都收起來
+          $body.querySelectorAll(`.child-of-${tid}`).forEach(sub => {
+            if (sub.classList.contains("stats-tier")) {
+              sub.style.display = "none";
+            } else {
+              sub.style.display = open ? "" : "none";
+              sub.classList.remove("open");
+              const tdName = sub.cells[1];
+              if (tdName) tdName.innerHTML = tdName.innerHTML.replace(/^▾ /, "▸ ");
+            }
+          });
+        }
+      });
+    });
+  }
+  // statsMonth 變動 → 重新渲染統計
+  document.getElementById("statsMonth").addEventListener("change", renderStats);
+
+  // ========= 表單顯示/隱藏 =========
+  const $formSection = document.getElementById("formSection");
+  function showForm() {
+    $formSection.classList.remove("hidden");
+    setTimeout(() => $formSection.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+  function hideForm() {
+    $formSection.classList.add("hidden");
+    exitEditMode();
+    $form.reset();
+    document.getElementById("fDate").value = fmt.dateInput(new Date());
+    document.getElementById("fHandler").value = me.name;
+    $lines.innerHTML = ""; addLine();
+  }
+  document.getElementById("btnNewSale").addEventListener("click", showForm);
+  document.getElementById("btnCloseForm").addEventListener("click", hideForm);
 
   // 從 cache 動態抓出有資料的月份/品項，組成下拉選項
   function refreshFilters() {
@@ -375,7 +558,7 @@
     const delId  = e.target.closest("[data-del]")?.dataset.del;
     if (editId) {
       const sale = salesCache.find(s => s.id === editId);
-      if (sale) enterEditMode(sale);
+      if (sale) { showForm(); enterEditMode(sale); }
       else toast("找不到該筆銷貨單，請重整", "err");
       return;
     }
