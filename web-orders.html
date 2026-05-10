@@ -267,11 +267,15 @@
         </div>
         <div class="wo-meta">
           <b>${o.customer || "—"}</b> · ${o.phone || "—"} · ${o.method || "—"}
-          ${o.address ? `<br>📍 ${o.address}` : ""}
-          ${o.transferLast5 ? `<br>💳 匯款帳號末 5 碼：<b>${o.transferLast5}</b>` : ""}
-          ${o.note ? `<br>📝 ${o.note}` : ""}
+          ${o.pickupLocation ? `<br>📍 自取地點：<b>${o.pickupLocation}</b>` : ""}
+          ${o.address        ? `<br>📍 地址：${o.address}` : ""}
+          ${o.carrier        ? `<br>❄️ 物流商：${o.carrier}` : ""}
+          ${o.shippingFee > 0 ? `<br>📦 運費：${fmt.money(o.shippingFee)}${o.shippingBox?` (${o.shippingBox})`:""}` : ""}
+          ${o.preferredDate  ? `<br>📅 希望送達：<b style="color:var(--orange-deep)">${o.preferredDate}</b>` : ""}
+          ${o.transferLast5  ? `<br>💳 匯款帳號末 5 碼：<b>${o.transferLast5}</b>` : ""}
+          ${o.note           ? `<br>📝 ${o.note}` : ""}
           <br><span class="muted" style="font-size:.82rem">${timeStr} 送出</span>
-          ${o.shipmentNo ? `<br>📦 出貨單號：<b>${o.shipmentNo}</b>` : ""}
+          ${o.shipmentNo     ? `<br>📦 出貨單號：<b>${o.shipmentNo}</b>` : ""}
         </div>
         <div class="wo-lines">${linesHtml || "（無品項）"}</div>
         <div class="wo-total">合計 ${fmt.money(o.total)}</div>

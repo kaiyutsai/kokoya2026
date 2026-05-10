@@ -37,12 +37,27 @@ function base64ToBlob(b64, mime = "image/png") {
   return new Blob([arr], { type: mime });
 }
 
-// 預設美化提示詞（不改主體、只調光與色彩）
-const DEFAULT_PROMPT =
-  "將這張水果商品照升級成電商主視覺：輕微提高亮度與對比、加強水果本身的鮮豔色彩與飽和度、" +
-  "讓表面光澤更有水嫩感、背景輕微淡化乾淨。" +
-  "嚴格保留水果的種類、形狀、數量、構圖與包裝；不要改變水果本身、不要加新東西、不要重畫。" +
-  "輸出與原圖相同比例的高品質商品照。";
+// 預設美化提示詞（商品攝影級大修；只保留水果種類與數量）
+const DEFAULT_PROMPT = [
+  "Transform this photo into a professional, magazine-quality fruit product photography hero shot for an e-commerce store.",
+  "",
+  "GOAL: Make the fruit look as appetizing, fresh, and premium as possible — like a high-end supermarket catalog or food magazine cover.",
+  "",
+  "YOU MAY EXTENSIVELY EDIT (do all of these as needed):",
+  "- Replace the background with a clean studio background (soft cream / off-white / subtle gradient / wooden surface), remove any distracting clutter, hands, hangers, packaging, plastic wrap, price tags, original surroundings.",
+  "- Re-light dramatically with soft studio lighting, add highlights, gentle shadows, and dewy water-droplet sheen on the fruit skin to convey freshness.",
+  "- Boost saturation, vibrancy, contrast, and clarity. Make colors pop richly but stay natural and edible-looking.",
+  "- Recompose to centered, hero-style framing with breathing room. Crop in tight if needed.",
+  "- Smooth out blemishes, dust, scratches, bruises, stickers, and any imperfections on the fruit surface.",
+  "- Add a few elegant decorative touches if it looks too plain (e.g., a tiny green leaf, water droplets, a soft drop shadow).",
+  "",
+  "STRICT RULES (must keep):",
+  "- The SAME fruit type/variety. If it is apples, output apples. If grapes, output grapes. Do not swap to a different fruit.",
+  "- The SAME approximate count of fruits (don't multiply 1 apple into 5).",
+  "- Realistic and photographic — NOT cartoon, NOT illustration, NOT painting, NOT 3D render style.",
+  "",
+  "OUTPUT: A clean, premium, photorealistic e-commerce product photo. Square or 4:3 ratio. High resolution. Same aspect ratio as input."
+].join("\n");
 
 /**
  * 用 Gemini 2.5 Flash Image 美化單張圖片

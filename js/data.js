@@ -15,7 +15,43 @@ import {
   storageRef, uploadBytes, getDownloadURL, deleteObject
 } from "./firebase-config.js";
 
-// ============ Storage 圖片上傳 ============
+// ============ Storage 圖片壓縮 + 上傳 ============
+// 上傳前先壓縮：縮到 maxDim 內、轉 JPEG quality 0.82。
+// 商品照通常 2-3 MB → 壓完約 200-400 KB，手機載入快很多。
+// 已經很小（< 250KB）或是 GIF 就跳過壓縮。
+export async function compressImage(file, { maxDim = 1400, quality = 0.82, mime = "image/jpeg" } = {}) {
+  if (!file || !file.type?.startsWith("image/")) return file;
+  if (file.type === "image/gif") return file;        // GIF 不壓避免變靜圖
+  if (file.size < 250 * 1024) return file;            // 已經很小就直接傳
+
+  // 用 createImageBitmap 比 Image+onload 快，且不依賴 DOM
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); }
+  catch { return file; }                              // 不支援就直接傳原檔
+
+  const { width: w0, height: h0 } = bitmap;
+  const scale = Math.min(1, maxDim / Math.max(w0, h0));
+  const w = Math.round(w0 * scale);
+  const h = Math.round(h0 * scale);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  // 白底（避免 PNG 透明壓 JPEG 變黑）
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+
+  const blob = await new Promise(res => canvas.toBlob(res, mime, quality));
+  if (!blob) return file;
+  // 壓完反而變大就用原檔
+  if (blob.size >= file.size) return file;
+  // 包成 File 保留檔名（差只副檔名換 .jpg）
+  const newName = (file.name || "image").replace(/\.[^.]+$/, "") + ".jpg";
+  return new File([blob], newName, { type: mime, lastModified: Date.now() });
+}
+
 // 上傳到 Firebase Storage 並回傳可公開存取的 URL
 // 支援 File（含 .name）或 Blob（如 AI 美化後的 blob）
 export async function uploadImage(fileOrBlob, folder = "item-images", suffix = "") {
@@ -684,6 +720,98 @@ export async function deleteArticle(id) {
   await deleteDoc(doc(db, "articles", id));
 }
 
+// ============ FAQs (常見問題) ============
+// 每筆：question / answer (markdown) / order / published
+export async function listFaqs({ onlyPublished = false } = {}) {
+  const snap = await getDocs(query(collection(db, "faqs"), orderBy("order", "asc")));
+  let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (onlyPublished) list = list.filter(f => f.published !== false);
+  return list;
+}
+
+export async function upsertFaq(id, data) {
+  const payload = {
+    question:  data.question  || "",
+    answer:    data.answer    || "",
+    order:     Number(data.order) || 0,
+    published: data.published !== false,
+    updatedAt: serverTimestamp(),
+    updatedBy: me().email
+  };
+  if (id) {
+    await updateDoc(doc(db, "faqs", id), payload);
+    return id;
+  } else {
+    const ref = await addDoc(collection(db, "faqs"), {
+      ...payload,
+      createdAt: serverTimestamp(),
+      createdBy: me().email
+    });
+    return ref.id;
+  }
+}
+
+export async function deleteFaq(id) {
+  await deleteDoc(doc(db, "faqs", id));
+}
+
+// 預設 3 筆（凱宇可在後台修改）
+export const DEFAULT_FAQS = [
+  {
+    question: "💳 匯款方式是？",
+    answer:
+`我們提供 **ATM / 銀行轉帳** 方式付款。
+
+下單後系統會顯示我們的銀行帳號（含戶名、銀行代碼、帳號）。請於 **24 小時內** 完成轉帳，並把 **匯款後 5 碼** 透過下單表單回填或 FB 訊息告知我們。
+
+對帳完成會在「我的訂單」更新狀態為「已收款」。`,
+    order: 1,
+    published: true
+  },
+  {
+    question: "🚚 送貨方式與運費？",
+    answer:
+`目前提供兩種取貨方式：
+
+- **宅配到府**：高雄市內當日／隔日由家人親自送達，**滿 NT$ 500 免運**，未滿酌收 50 元。
+- **自取**：可至我們的水果攤（地址會在訂單確認後 LINE 給您）。
+
+宅配時間如有特殊需求可在備註欄註明，我們會盡量配合。`,
+    order: 2,
+    published: true
+  },
+  {
+    question: "🍎 收到瑕疵品怎麼辦？",
+    answer:
+`水果是天然農產品，難免會有壓傷、過熟、不甜等狀況。如果收到狀況不滿意：
+
+1. 請於 **收到當天** 拍照
+2. 透過 **FB 訊息** 聯絡我們（按頁腳的 FB 圖示）
+3. 告訴我們訂單編號 + 是哪幾顆有問題
+
+我們會 **無條件補寄、退款或下次扣抵**。果果家不會讓家人吃虧 ❤️`,
+    order: 3,
+    published: true
+  }
+];
+
+// 一鍵匯入預設 3 筆 FAQ（後台用）
+export async function seedDefaultFaqs() {
+  const existing = await listFaqs();
+  if (existing.length > 0) throw new Error(`已經有 ${existing.length} 筆 FAQ，無法匯入預設（避免重複）`);
+  const batch = writeBatch(db);
+  DEFAULT_FAQS.forEach(f => {
+    const ref = doc(collection(db, "faqs"));
+    batch.set(ref, {
+      ...f,
+      createdAt: serverTimestamp(),
+      createdBy: me().email
+    });
+  });
+  await batch.commit();
+  return DEFAULT_FAQS.length;
+}
+
 // ============ Stocktake (庫存盤點) ============
 // 實際盤點數量 vs 系統庫存 → 寫入差異紀錄 + 更新 item.stock 為實際數量
 export async function addStocktake(s) {
@@ -902,8 +1030,34 @@ const DEFAULT_LOOKUPS = {
   deliveryStaff: [],
   handlers: ["凱宇", "凱帆", "妍慧", "于真"],
   // 水果大項分類（後台 admin 可在「設定」增減）
-  categories: ["蘋果類","柑橘類","梨類","瓜類","莓果類","熱帶水果","葡萄類","奇異果類","其他"]
+  categories: ["蘋果類","柑橘類","梨類","瓜類","莓果類","熱帶水果","葡萄類","奇異果類","其他"],
+  // 自取地點（admin 在設定頁可增減；購物網結帳會出現下拉）
+  pickupSpots: [],
+  // 冷藏低溫配的運送公司（admin 可改）
+  coldShipCarrier: "黑貓宅急便",
+  // 冷藏低溫配箱型 + 運費（以「蘋果顆」為換算單位估箱）
+  coldShipBoxes: {
+    small:  { maxQty: 20, fee: 160, note: "60cm 以下 / 約 20 顆蘋果" },
+    medium: { maxQty: 50, fee: 250, note: "60-90cm / 約 40-50 顆蘋果" },
+    large:  { maxQty: 80, fee: 290, note: "90-120cm / 約 80 顆蘋果" }
+  },
+  // 老闆親送的可達範圍（顯示在購物網提示用，地址驗證也會用）
+  ownerDeliveryArea: "台南市南區、東區"
 };
+
+// 依購物車總數量估冷藏宅配運費
+// boxes 結構：{ small: {maxQty, fee}, medium: {maxQty, fee}, large: {maxQty, fee} }
+// 超過大箱 → 多個大箱（向上取整）
+export function estimateColdShipFee(totalQty, boxes) {
+  totalQty = Number(totalQty) || 0;
+  const b = boxes || DEFAULT_LOOKUPS.coldShipBoxes;
+  if (totalQty <= 0) return { fee: 0, box: "—", boxCount: 0, note: "" };
+  if (totalQty <= b.small.maxQty)  return { fee: b.small.fee,  box: "小箱", boxCount: 1, note: b.small.note  || "" };
+  if (totalQty <= b.medium.maxQty) return { fee: b.medium.fee, box: "中箱", boxCount: 1, note: b.medium.note || "" };
+  if (totalQty <= b.large.maxQty)  return { fee: b.large.fee,  box: "大箱", boxCount: 1, note: b.large.note  || "" };
+  const n = Math.ceil(totalQty / b.large.maxQty);
+  return { fee: b.large.fee * n, box: `大箱 × ${n}`, boxCount: n, note: "超過單箱容量，估 " + n + " 個大箱" };
+}
 
 export async function getLookups() {
   const s = await getDoc(LOOKUPS_REF());
@@ -913,8 +1067,28 @@ export async function getLookups() {
     suppliers:     Array.isArray(data.suppliers)     ? data.suppliers     : DEFAULT_LOOKUPS.suppliers,
     deliveryStaff: Array.isArray(data.deliveryStaff) ? data.deliveryStaff : DEFAULT_LOOKUPS.deliveryStaff,
     handlers:      (Array.isArray(data.handlers) && data.handlers.length) ? data.handlers : DEFAULT_LOOKUPS.handlers,
-    categories:    (Array.isArray(data.categories) && data.categories.length) ? data.categories : DEFAULT_LOOKUPS.categories
+    categories:    (Array.isArray(data.categories) && data.categories.length) ? data.categories : DEFAULT_LOOKUPS.categories,
+    pickupSpots:   Array.isArray(data.pickupSpots)   ? data.pickupSpots   : DEFAULT_LOOKUPS.pickupSpots,
+    coldShipCarrier:   typeof data.coldShipCarrier === "string"   ? data.coldShipCarrier   : DEFAULT_LOOKUPS.coldShipCarrier,
+    coldShipBoxes:     (data.coldShipBoxes && typeof data.coldShipBoxes === "object")
+                         ? mergeBoxes(data.coldShipBoxes)
+                         : DEFAULT_LOOKUPS.coldShipBoxes,
+    ownerDeliveryArea: typeof data.ownerDeliveryArea === "string" ? data.ownerDeliveryArea : DEFAULT_LOOKUPS.ownerDeliveryArea
   };
+}
+
+function mergeBoxes(input) {
+  const def = DEFAULT_LOOKUPS.coldShipBoxes;
+  const out = {};
+  ["small","medium","large"].forEach(k => {
+    const src = input[k] || {};
+    out[k] = {
+      maxQty: Number(src.maxQty) || def[k].maxQty,
+      fee:    Number(src.fee)    || def[k].fee,
+      note:   typeof src.note === "string" ? src.note : def[k].note
+    };
+  });
+  return out;
 }
 
 export async function saveLookups(data) {
@@ -923,6 +1097,12 @@ export async function saveLookups(data) {
     deliveryStaff: Array.isArray(data.deliveryStaff) ? data.deliveryStaff : [],
     handlers:      Array.isArray(data.handlers)      ? data.handlers      : [],
     categories:    Array.isArray(data.categories)    ? data.categories    : [],
+    pickupSpots:   Array.isArray(data.pickupSpots)   ? data.pickupSpots   : [],
+    coldShipCarrier:   typeof data.coldShipCarrier === "string"   ? data.coldShipCarrier   : "黑貓宅急便",
+    coldShipBoxes:     (data.coldShipBoxes && typeof data.coldShipBoxes === "object")
+                         ? mergeBoxes(data.coldShipBoxes)
+                         : DEFAULT_LOOKUPS.coldShipBoxes,
+    ownerDeliveryArea: typeof data.ownerDeliveryArea === "string" ? data.ownerDeliveryArea : "台南市南區、東區",
     updatedAt: serverTimestamp(),
     updatedBy: me().email
   }, { merge: true });

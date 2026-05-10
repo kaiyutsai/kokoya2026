@@ -118,6 +118,94 @@
       <div id="paymentStatus" class="muted" style="font-size:.85rem;margin-top:8px"></div>
     </div>
 
+    <!-- 運送方式（自取地點 / 冷藏低溫配 / 老闆親送） -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>📦 運送方式設定</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        客人在購物網結帳時可選 3 種：<b>自取 / 冷藏低溫配 / 老闆親送</b>。<br>
+        以下設定會即時同步到結帳頁。
+      </p>
+
+      <h3 style="font-size:1rem;margin:8px 0 6px">📍 自取地點</h3>
+      <p class="muted" style="font-size:.82rem;margin:0 0 10px">客人選「自取」時看到的地點清單，可填多個。建議寫上地址 + 營業時間。</p>
+      <div id="pickupList" class="lookup-list"></div>
+      <div class="row-fields" style="margin-top:10px">
+        <input class="input" id="newPickup" placeholder="例：果果家門市・台南市東區XX路 12 號（週一-日 9-18）">
+        <button class="btn primary" id="btnAddPickup" type="button">＋ 新增</button>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+
+      <h3 style="font-size:1rem;margin:8px 0 6px">❄️ 冷藏低溫配 — 運送公司</h3>
+      <p class="muted" style="font-size:.82rem;margin:0 0 10px">客人選低溫配時顯示的物流商名稱。預設黑貓宅急便。</p>
+      <div class="row-fields">
+        <input class="input" id="coldShipCarrier" placeholder="例：黑貓宅急便">
+        <button class="btn primary" id="btnSaveCarrier" type="button">💾 儲存</button>
+      </div>
+
+      <h3 style="font-size:1rem;margin:18px 0 6px">📦 冷藏宅配 箱型 + 運費（系統會依購物數量自動估）</h3>
+      <p class="muted" style="font-size:.82rem;line-height:1.7;margin:0 0 10px">
+        以「蘋果顆」為換算單位（1 蘋果 ≈ 1 單位）。客人下單時，系統會把購物車總數量加總後，挑能裝下的最小箱顯示運費。<br>
+        <b>超過大箱容量</b>會自動估「大箱 × N 個」。如果是西瓜、鳳梨這種特大水果，建議手動聯絡客人收費。
+      </p>
+      <div class="ship-box-grid">
+        <div class="ship-box">
+          <div class="hd">📦 小箱</div>
+          <div class="row-fields">
+            <div class="field"><label>容納上限（顆）</label><input class="input" id="boxSmallQty" type="number" min="1"></div>
+            <div class="field"><label>運費 NT$</label><input class="input" id="boxSmallFee" type="number" min="0"></div>
+          </div>
+          <div class="field"><label>備註</label><input class="input" id="boxSmallNote" placeholder="例：60cm 以下"></div>
+        </div>
+        <div class="ship-box">
+          <div class="hd">📦 中箱</div>
+          <div class="row-fields">
+            <div class="field"><label>容納上限（顆）</label><input class="input" id="boxMediumQty" type="number" min="1"></div>
+            <div class="field"><label>運費 NT$</label><input class="input" id="boxMediumFee" type="number" min="0"></div>
+          </div>
+          <div class="field"><label>備註</label><input class="input" id="boxMediumNote" placeholder="例：60-90cm"></div>
+        </div>
+        <div class="ship-box">
+          <div class="hd">📦 大箱</div>
+          <div class="row-fields">
+            <div class="field"><label>容納上限(顆)</label><input class="input" id="boxLargeQty" type="number" min="1"></div>
+            <div class="field"><label>運費 NT$</label><input class="input" id="boxLargeFee" type="number" min="0"></div>
+          </div>
+          <div class="field"><label>備註</label><input class="input" id="boxLargeNote" placeholder="例：90-120cm"></div>
+        </div>
+      </div>
+      <div class="flex" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn primary" id="btnSaveBoxes" type="button">💾 儲存箱型運費</button>
+      </div>
+      <style>
+        .ship-box-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+        }
+        @media (max-width: 700px) { .ship-box-grid { grid-template-columns: 1fr; } }
+        .ship-box {
+          background: var(--paper-2);
+          border: 1px solid var(--line);
+          border-radius: var(--r-md);
+          padding: 12px;
+        }
+        .ship-box .hd { font-weight: 700; margin-bottom: 8px; color: var(--orange-deep); font-family: "Noto Serif TC"; }
+      </style>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+
+      <h3 style="font-size:1rem;margin:8px 0 6px">🛵 老闆親送 — 可達範圍</h3>
+      <p class="muted" style="font-size:.82rem;margin:0 0 10px">
+        客人選「老闆親送」時會看到這個地區提示，地址也會自動驗證是否包含這幾個關鍵字。<br>
+        多個區域用逗號或頓號分隔（例：台南市南區、東區、安平區）。
+      </p>
+      <div class="row-fields">
+        <input class="input" id="ownerArea" placeholder="例：台南市南區、東區">
+        <button class="btn primary" id="btnSaveArea" type="button">💾 儲存</button>
+      </div>
+    </div>
+
     <!-- 水果大項分類 -->
     <div class="card" style="margin-top:14px">
       <div class="card-h"><h2>🍎 水果大項分類</h2></div>
@@ -194,7 +282,17 @@
     boot();
   }
 
-  let lookups = { suppliers: [], deliveryStaff: [], handlers: [], categories: [] };
+  let lookups = {
+    suppliers: [], deliveryStaff: [], handlers: [], categories: [],
+    pickupSpots: [],
+    coldShipCarrier: "黑貓宅急便",
+    coldShipBoxes: {
+      small:  { maxQty: 20, fee: 160, note: "60cm 以下" },
+      medium: { maxQty: 50, fee: 250, note: "60-90cm" },
+      large:  { maxQty: 80, fee: 290, note: "90-120cm" }
+    },
+    ownerDeliveryArea: "台南市南區、東區"
+  };
   let allItems = [];   // 給「分類底下品項」清單用
 
   async function boot() {
@@ -204,12 +302,86 @@
     renderStaff();
     renderHandlers();
     renderCategories();
+    renderPickupSpots();
+    document.getElementById("coldShipCarrier").value = lookups.coldShipCarrier || "黑貓宅急便";
+    document.getElementById("ownerArea").value = lookups.ownerDeliveryArea || "台南市南區、東區";
+    // 載入箱型設定
+    const b = lookups.coldShipBoxes || {};
+    ["small","medium","large"].forEach(k => {
+      const tag = k[0].toUpperCase() + k.slice(1);
+      const v = b[k] || {};
+      document.getElementById("box" + tag + "Qty").value  = v.maxQty ?? "";
+      document.getElementById("box" + tag + "Fee").value  = v.fee    ?? "";
+      document.getElementById("box" + tag + "Note").value = v.note   ?? "";
+    });
     bindDataPanel();
     bindApiKeyPanel();
     loadApiKey();
     bindPaymentPanel();
     loadPayment();
   }
+
+  // ---- 自取地點 ----
+  function renderPickupSpots() {
+    renderList("pickupList", lookups.pickupSpots || [], async (i) => {
+      const name = lookups.pickupSpots[i];
+      if (!confirm(`移除自取地點「${name}」？`)) return;
+      lookups.pickupSpots.splice(i, 1);
+      renderPickupSpots();
+      await persist();
+      toast("已移除", "ok");
+    });
+  }
+  async function addPickupSpot() {
+    const $i = document.getElementById("newPickup");
+    const v = $i.value.trim();
+    if (!v) return toast("請輸入地點", "err");
+    lookups.pickupSpots = lookups.pickupSpots || [];
+    if (lookups.pickupSpots.includes(v)) return toast("已存在相同地點", "err");
+    lookups.pickupSpots.push(v);
+    $i.value = "";
+    renderPickupSpots();
+    await persist();
+    toast("✓ 已新增", "ok");
+  }
+  document.getElementById("btnAddPickup").addEventListener("click", addPickupSpot);
+  document.getElementById("newPickup").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addPickupSpot(); }
+  });
+
+  // ---- 冷藏配送公司 ----
+  document.getElementById("btnSaveCarrier").addEventListener("click", async () => {
+    const v = document.getElementById("coldShipCarrier").value.trim() || "黑貓宅急便";
+    lookups.coldShipCarrier = v;
+    await persist();
+    toast("✓ 已儲存", "ok");
+  });
+
+  // ---- 老闆親送範圍 ----
+  document.getElementById("btnSaveArea").addEventListener("click", async () => {
+    const v = document.getElementById("ownerArea").value.trim() || "台南市南區、東區";
+    lookups.ownerDeliveryArea = v;
+    await persist();
+    toast("✓ 已儲存", "ok");
+  });
+
+  // ---- 箱型運費 ----
+  document.getElementById("btnSaveBoxes").addEventListener("click", async () => {
+    const get = id => Number(document.getElementById(id).value) || 0;
+    const note = id => document.getElementById(id).value.trim();
+    lookups.coldShipBoxes = {
+      small:  { maxQty: get("boxSmallQty"),  fee: get("boxSmallFee"),  note: note("boxSmallNote") },
+      medium: { maxQty: get("boxMediumQty"), fee: get("boxMediumFee"), note: note("boxMediumNote") },
+      large:  { maxQty: get("boxLargeQty"),  fee: get("boxLargeFee"),  note: note("boxLargeNote") }
+    };
+    // 簡單驗證：上限要遞增
+    if (lookups.coldShipBoxes.small.maxQty >= lookups.coldShipBoxes.medium.maxQty ||
+        lookups.coldShipBoxes.medium.maxQty >= lookups.coldShipBoxes.large.maxQty) {
+      return toast("容納上限要：小 < 中 < 大", "err");
+    }
+    await persist();
+    toast("✓ 已儲存箱型運費", "ok");
+  });
 
   // ===== 銀行帳號 =====
   function bindPaymentPanel() {

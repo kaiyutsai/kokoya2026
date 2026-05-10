@@ -18,6 +18,7 @@ const NAV = [
   { href: "reports.html",    label: "報表",     icon: "📊", key: "reports" },
   { href: "customers.html",  label: "會員清單", icon: "👥", key: "customers" },
   { href: "articles.html",   label: "水果小教室", icon: "📚", key: "articles" },
+  { href: "faqs.html",       label: "常見問題", icon: "❓", key: "faqs" },
   { href: "settings.html",   label: "設定",     icon: "⚙️", key: "settings", adminOnly: true },
 ];
 

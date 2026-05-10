@@ -11,7 +11,7 @@
   /* 售價組合 row */
   .tier-row {
     display: grid;
-    grid-template-columns: 1fr 90px 36px 110px 36px;
+    grid-template-columns: 1fr 80px 30px 100px 78px 32px;
     gap: 6px; align-items: center;
     margin-bottom: 6px;
   }
@@ -23,6 +23,32 @@
     font-size: .8rem; color: var(--leaf-deep);
     margin: -2px 0 6px 4px;
     min-height: 1em;
+  }
+  .tier-row .ti-show {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: .82rem; color: var(--ink-2);
+    cursor: pointer; user-select: none;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+  }
+  .tier-row .ti-show input { margin: 0; cursor: pointer; }
+  .tier-row .ti-show:has(input:checked) {
+    background: #E9F5DC;
+    border-color: var(--leaf-deep, #5C8C44);
+    color: var(--leaf-deep, #5C8C44);
+    font-weight: 700;
+  }
+  .tier-row .ti-show:has(input:not(:checked)) {
+    opacity: .55;
+  }
+  @media (max-width: 700px) {
+    .tier-row {
+      grid-template-columns: 1fr 1fr 30px;
+      gap: 6px;
+    }
+    .tier-row .ti-show, .tier-row .ti-del { grid-column: span 1; }
   }
   /* 品項清單裡顯示售價組合的小標 */
   .tag-tier {
@@ -231,7 +257,7 @@
 
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
-  import { listItems, upsertItem, deleteItem, getLookups, uploadImage } from "./js/data.js";
+  import { listItems, upsertItem, deleteItem, getLookups, uploadImage, compressImage } from "./js/data.js";
   import { enhanceImage } from "./js/ai-image.js";
 
   const me = await mountShell({ active: "items" });
@@ -370,6 +396,9 @@
   //   imageUrl = galleryImages[0]（給購物網用）
   //   images   = galleryImages（完整清單）
   let galleryImages = [];
+  // 暫存本次上傳的原檔 blob（key=url, value=Blob）
+  // 用於 AI 美化避免從 storage URL 重新 fetch（會被 CORS 擋）
+  const blobCache = new Map();
   const MAX_IMAGES = 5;
 
   function renderGallery() {
@@ -432,10 +461,15 @@
     let okCnt = 0, errCnt = 0;
     for (let i = 0; i < tasks.length; i++) {
       const file = tasks[i];
-      $st.innerHTML = `<span style="color:var(--orange)">📤 上傳中 ${i+1}/${tasks.length}…</span>`;
+      $st.innerHTML = `<span style="color:var(--orange)">🗜️ 壓縮中 ${i+1}/${tasks.length}…</span>`;
       try {
-        const { url } = await uploadImage(file, "item-images");
+        const compressed = await compressImage(file);
+        const beforeKB = Math.round(file.size / 1024);
+        const afterKB  = Math.round(compressed.size / 1024);
+        $st.innerHTML = `<span style="color:var(--orange)">📤 上傳中 ${i+1}/${tasks.length}（${beforeKB}KB → ${afterKB}KB）…</span>`;
+        const { url } = await uploadImage(compressed, "item-images");
         galleryImages.push(url);
+        blobCache.set(url, compressed);   // 暫存壓縮版給 AI 美化用
         renderGallery();
         okCnt++;
       } catch (err) {
@@ -464,13 +498,21 @@
     $st.innerHTML = `<span style="color:var(--orange)">🪄 AI 美化中（10–30 秒）…</span>`;
     try {
       const origUrl = galleryImages[0];
-      // 從 Storage URL 抓 blob
-      const res = await fetch(origUrl);
-      if (!res.ok) throw new Error(`原圖載入失敗 ${res.status}`);
-      const origBlob = await res.blob();
+      // 1) 先用記憶體裡的 blob（本次剛上傳過的）；沒有才從 URL 抓
+      let origBlob = blobCache.get(origUrl);
+      if (!origBlob) {
+        try {
+          const res = await fetch(origUrl);
+          if (!res.ok) throw new Error(`原圖載入失敗 ${res.status}`);
+          origBlob = await res.blob();
+        } catch (err) {
+          throw new Error("無法讀取原圖（CORS 被擋）。請重新上傳這張主圖再做 AI 美化");
+        }
+      }
 
       const { blob: enhanced } = await enhanceImage(origBlob);
       const { url: enhancedUrl } = await uploadImage(enhanced, "item-images", "ai");
+      blobCache.set(enhancedUrl, enhanced);
       // 美化版放第 0 張，原圖往後（如沒滿就保留原圖以防萬一）
       galleryImages = [enhancedUrl, origUrl, ...galleryImages.slice(1)].slice(0, MAX_IMAGES);
       renderGallery();
@@ -511,11 +553,17 @@
     const u = document.getElementById("fUnit").value.trim() || "顆";
     const div = document.createElement("div");
     div.className = "tier-row";
+    // showOnShop 預設 true（沒設或舊資料視為顯示）
+    const show = t.showOnShop !== false;
     div.innerHTML = `
       <input class="input ti-label" placeholder="標籤（可空，如「4顆組」）" value="${t.label || ""}">
       <input class="input ti-qty" type="number" min="1" step="1" placeholder="數量" value="${t.qty ?? ""}">
       <span class="ti-unit">${u}</span>
       <input class="input ti-price" type="number" min="0" step="1" placeholder="總價" value="${t.price ?? ""}">
+      <label class="ti-show" title="勾選 = 在購物網顯示這個組合（節慶限定價可暫時取消勾選）">
+        <input type="checkbox" class="ti-onshop" ${show ? "checked" : ""}>
+        <span>🛒 上架</span>
+      </label>
       <button type="button" class="btn ghost icon-only ti-del" title="移除">✕</button>
       <div class="ti-calc"></div>
     `;
@@ -546,11 +594,12 @@
     const name = document.getElementById("fName").value.trim();
     if (!name) return toast("請填品項名稱", "err");
 
-    // 蒐集售價組合
+    // 蒐集售價組合（含「是否在購物網顯示」勾選）
     const priceTiers = [...$iTiers.querySelectorAll(".tier-row")].map(row => ({
-      label: row.querySelector(".ti-label").value.trim(),
-      qty:   Number(row.querySelector(".ti-qty").value) || 0,
-      price: Number(row.querySelector(".ti-price").value) || 0
+      label:      row.querySelector(".ti-label").value.trim(),
+      qty:        Number(row.querySelector(".ti-qty").value) || 0,
+      price:      Number(row.querySelector(".ti-price").value) || 0,
+      showOnShop: row.querySelector(".ti-onshop").checked
     })).filter(t => t.qty > 0 && t.price > 0);
 
     const data = {
