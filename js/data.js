@@ -17,19 +17,25 @@ import {
 
 // ============ Storage 圖片上傳 ============
 // 上傳到 Firebase Storage 並回傳可公開存取的 URL
-// path 範例：item-images/2026-05-10/abc123.jpg
-export async function uploadImage(file, folder = "item-images") {
-  if (!file) throw new Error("沒有選檔案");
-  if (!file.type.startsWith("image/")) throw new Error("只能上傳圖片");
-  if (file.size > 5 * 1024 * 1024) throw new Error("圖片不能超過 5MB");
+// 支援 File（含 .name）或 Blob（如 AI 美化後的 blob）
+export async function uploadImage(fileOrBlob, folder = "item-images", suffix = "") {
+  if (!fileOrBlob) throw new Error("沒有圖片資料");
+  const mime = fileOrBlob.type || "image/jpeg";
+  if (!mime.startsWith("image/")) throw new Error("只能上傳圖片");
+  if (fileOrBlob.size > 8 * 1024 * 1024) throw new Error("圖片不能超過 8MB");
 
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  // 從 mime 或 file.name 推副檔名
+  const fromName = fileOrBlob.name ? (fileOrBlob.name.split(".").pop() || "").toLowerCase() : "";
+  const fromMime = mime.split("/")[1] || "jpg";
+  const ext = fromName || fromMime;
+
   const stamp = new Date().toISOString().slice(0,10);
-  const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const tag = suffix ? `_${suffix}` : "";
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}${tag}.${ext}`;
   const path = `${folder}/${stamp}/${id}`;
   const ref = storageRef(storage, path);
 
-  const snap = await uploadBytes(ref, file, { contentType: file.type });
+  const snap = await uploadBytes(ref, fileOrBlob, { contentType: mime });
   const url = await getDownloadURL(snap.ref);
   return { url, path };
 }

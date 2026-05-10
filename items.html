@@ -119,23 +119,87 @@
         </p>
       </div>
       <div class="field">
-        <label>🖼️ 商品圖片（購物網會顯示，可留空用 emoji）</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
-          <label class="btn ghost" for="fFile" style="cursor:pointer;margin:0">
-            📤 從電腦上傳圖片
-            <input type="file" id="fFile" accept="image/*" style="display:none">
+        <label>🖼️ 商品圖庫（最多 5 張，第一張會自動成為主圖）</label>
+        <div class="img-gallery" id="imgGallery"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <label class="btn ghost" for="fFile" id="btnAddImg" style="cursor:pointer;margin:0">
+            📤 加入圖片
+            <input type="file" id="fFile" accept="image/*" multiple style="display:none">
           </label>
           <span id="uploadStatus" class="muted" style="font-size:.84rem"></span>
-          <button type="button" class="btn ghost icon-only" id="btnClearImg" title="清空圖片" style="margin-left:auto">🗑️</button>
+          <span id="galleryCount" class="muted" style="font-size:.78rem;margin-left:auto"></span>
         </div>
-        <input class="input" id="fImg" placeholder="https://...（或上傳檔案後自動填入）">
-        <p class="muted" style="font-size:.78rem;margin:4px 0 0">
-          支援 jpg/png/webp，5MB 以內，建議 600×400 或正方形。也可以直接貼網址。
+        <p class="muted" style="font-size:.78rem;margin:6px 0 0">
+          🪄 <b>AI 美化主圖</b>：把展示主圖丟給 Gemini 做色彩亮度增強，原圖會保留。<br>
+          支援 jpg/png/webp，單張 8MB 以內。也可以直接在下方貼網址。
         </p>
-        <div id="imgPreview" style="margin-top:8px;display:none">
-          <img id="imgPreviewImg" style="max-width:240px;max-height:180px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff" alt="預覽">
-        </div>
+        <input class="input" id="fImg" placeholder="主圖網址（自動帶入，也可手動貼）" style="margin-top:10px">
       </div>
+      <style>
+        .img-gallery {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+          gap: 10px;
+          padding: 10px;
+          border: 1px dashed var(--line);
+          border-radius: 8px;
+          background: #fff8;
+          min-height: 100px;
+        }
+        .img-gallery:empty::before {
+          content: "尚未加入圖片";
+          grid-column: 1/-1;
+          text-align: center;
+          color: var(--muted);
+          font-size: .88rem;
+          padding: 30px 0;
+        }
+        .img-card {
+          position: relative;
+          aspect-ratio: 4/3;
+          border-radius: 8px;
+          overflow: hidden;
+          border: 2px solid var(--line);
+          background: #fff;
+        }
+        .img-card.is-main { border-color: var(--orange-d, #C97B4B); box-shadow: 0 0 0 2px rgba(232,162,102,.3); }
+        .img-card img { width: 100%; height: 100%; object-fit: cover; }
+        .img-card .badge-main {
+          position: absolute; top: 6px; left: 6px;
+          background: var(--orange-d, #C97B4B); color: #fff;
+          padding: 3px 8px; border-radius: 999px;
+          font-size: .72rem; font-weight: 700;
+        }
+        .img-card .actions {
+          position: absolute; bottom: 0; left: 0; right: 0;
+          display: flex; gap: 4px;
+          padding: 6px;
+          background: linear-gradient(transparent, rgba(0,0,0,.55));
+        }
+        .img-card .actions button {
+          flex: 1;
+          font-size: .72rem;
+          padding: 4px 6px;
+          border: 0;
+          border-radius: 6px;
+          background: rgba(255,255,255,.92);
+          color: var(--ink-1, #4A3325);
+          cursor: pointer;
+          font-weight: 600;
+        }
+        .img-card .actions button.del { background: rgba(201,75,18,.92); color: #fff; }
+        .img-card .actions button.ai  { background: rgba(94,140,68,.92); color: #fff; }
+        .img-card .actions button:hover { transform: scale(1.05); }
+        .img-card.processing::after {
+          content: "🪄 AI 美化中…";
+          position: absolute; inset: 0;
+          display: grid; place-items: center;
+          background: rgba(255,253,248,.86);
+          color: var(--orange-d, #C97B4B);
+          font-weight: 700;
+          font-size: .9rem;
+        }
+      </style>
       <div class="field">
         <label>商品描述（購物網商品卡會顯示，可留空）</label>
         <input class="input" id="fDesc" placeholder="例：產地直送，當季嚴選">
@@ -168,6 +232,7 @@
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
   import { listItems, upsertItem, deleteItem, getLookups, uploadImage } from "./js/data.js";
+  import { enhanceImage } from "./js/ai-image.js";
 
   const me = await mountShell({ active: "items" });
   const $rows  = document.getElementById("rows");
@@ -262,6 +327,10 @@
     document.getElementById("fBoxUnit").value = item?.boxUnit || "箱";
     document.getElementById("fImg").value     = item?.imageUrl || "";
     document.getElementById("uploadStatus").textContent = "";
+    // 載入圖庫：以 item.images 為主；舊資料只有 imageUrl → 補進去
+    galleryImages = Array.isArray(item?.images) ? [...item.images] : [];
+    if (item?.imageUrl && !galleryImages.includes(item.imageUrl)) galleryImages.unshift(item.imageUrl);
+    renderGallery();
     document.getElementById("fDesc").value    = item?.desc || "";
     // visible 欄位：新增時預設 true；編輯時用既有值（未設定的舊資料也視為 true）
     document.getElementById("fVisible").checked = item ? (item.visible !== false) : true;
@@ -297,52 +366,136 @@
     $modal.classList.add("show");
   }
 
-  // ----- 圖片預覽 -----
-  document.getElementById("fImg").addEventListener("input", updateImgPreview);
-  function updateImgPreview() {
-    const url = document.getElementById("fImg").value.trim();
-    const $box = document.getElementById("imgPreview");
-    const $img = document.getElementById("imgPreviewImg");
-    if (url) {
-      $img.src = url;
-      $img.onerror = () => { $box.style.display = "none"; };
-      $img.onload  = () => { $box.style.display = "block"; };
-    } else {
-      $box.style.display = "none";
-    }
+  // ===== 商品圖庫（多圖 + AI 美化） =====
+  // galleryImages 是當前 modal 的圖片清單；第 0 張 = 主圖；存到 Firestore 時：
+  //   imageUrl = galleryImages[0]（給購物網用）
+  //   images   = galleryImages（完整清單）
+  let galleryImages = [];
+  const MAX_IMAGES = 5;
+
+  function renderGallery() {
+    const $g = document.getElementById("imgGallery");
+    const $cnt = document.getElementById("galleryCount");
+    const $main = document.getElementById("fImg");
+    const $btnAdd = document.getElementById("btnAddImg");
+
+    $g.innerHTML = galleryImages.map((url, i) => `
+      <div class="img-card${i===0?' is-main':''}" data-idx="${i}">
+        ${i===0 ? '<span class="badge-main">⭐ 主圖</span>' : ''}
+        <img src="${url}" alt="圖${i+1}">
+        <div class="actions">
+          ${i===0
+            ? `<button type="button" class="ai" data-act="enhance" data-idx="${i}" title="AI 美化主圖">🪄 AI 美化</button>`
+            : `<button type="button" data-act="setMain" data-idx="${i}" title="設為主圖">⭐ 設主圖</button>`}
+          <button type="button" class="del" data-act="del" data-idx="${i}" title="移除">✕</button>
+        </div>
+      </div>
+    `).join("");
+
+    $cnt.textContent = `${galleryImages.length} / ${MAX_IMAGES}`;
+    $main.value = galleryImages[0] || "";
+    $btnAdd.style.opacity = galleryImages.length >= MAX_IMAGES ? ".4" : "1";
+    $btnAdd.style.pointerEvents = galleryImages.length >= MAX_IMAGES ? "none" : "auto";
   }
 
-  // ----- 從電腦上傳圖片到 Firebase Storage -----
-  document.getElementById("fFile").addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const $st  = document.getElementById("uploadStatus");
-    const $img = document.getElementById("fImg");
-    $st.innerHTML = `<span style="color:var(--orange)">📤 上傳中…</span>`;
-    try {
-      const { url } = await uploadImage(file, "item-images");
-      $img.value = url;
-      updateImgPreview();
-      $st.innerHTML = `<span style="color:var(--leaf-deep)">✓ 上傳完成</span>`;
-      toast("✓ 圖片已上傳", "ok");
-      setTimeout(() => $st.textContent = "", 3000);
-    } catch (err) {
-      console.error(err);
-      const isStorageOff = /storage|cors|bucket/i.test(err.message);
-      $st.innerHTML = `<span style="color:var(--tomato)">✕ 上傳失敗</span>`;
-      toast(isStorageOff
-        ? "上傳失敗：請先到 Firebase Console 啟用 Storage"
-        : "上傳失敗：" + err.message, "err");
-    } finally {
-      e.target.value = "";   // reset 讓同個檔可重選
+  // gallery 內按鈕事件（設主圖 / 移除 / AI 美化）
+  document.getElementById("imgGallery").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const idx = Number(btn.dataset.idx);
+    const act = btn.dataset.act;
+
+    if (act === "del") {
+      if (!confirm("確定移除這張圖片？")) return;
+      galleryImages.splice(idx, 1);
+      renderGallery();
+    } else if (act === "setMain") {
+      const [pic] = galleryImages.splice(idx, 1);
+      galleryImages.unshift(pic);
+      renderGallery();
+    } else if (act === "enhance") {
+      await enhanceMain();
     }
   });
 
-  // 清空圖片
-  document.getElementById("btnClearImg").addEventListener("click", () => {
-    document.getElementById("fImg").value = "";
-    updateImgPreview();
-    document.getElementById("uploadStatus").textContent = "";
+  // 加入新圖（支援多選）
+  document.getElementById("fFile").addEventListener("change", async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const $st = document.getElementById("uploadStatus");
+    const slots = MAX_IMAGES - galleryImages.length;
+    if (slots <= 0) {
+      toast(`已達上限 ${MAX_IMAGES} 張`, "err");
+      e.target.value = "";
+      return;
+    }
+    const tasks = files.slice(0, slots);
+    let okCnt = 0, errCnt = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      const file = tasks[i];
+      $st.innerHTML = `<span style="color:var(--orange)">📤 上傳中 ${i+1}/${tasks.length}…</span>`;
+      try {
+        const { url } = await uploadImage(file, "item-images");
+        galleryImages.push(url);
+        renderGallery();
+        okCnt++;
+      } catch (err) {
+        console.error(err);
+        errCnt++;
+        const isStorageOff = /storage|cors|bucket/i.test(err.message);
+        if (isStorageOff) {
+          toast("請先到 Firebase Console 啟用 Storage", "err");
+          break;
+        }
+      }
+    }
+    $st.innerHTML = errCnt
+      ? `<span style="color:var(--tomato)">✕ ${okCnt} 成功 / ${errCnt} 失敗</span>`
+      : `<span style="color:var(--leaf-deep, #5C8C44)">✓ ${okCnt} 張上傳完成</span>`;
+    setTimeout(() => $st.textContent = "", 3500);
+    e.target.value = "";
+  });
+
+  // 主圖 AI 美化：抓主圖 → 丟 Gemini → 美化版插到第 0 張、原圖移到第 2 張
+  async function enhanceMain() {
+    if (!galleryImages.length) return toast("還沒有主圖", "err");
+    const $card = document.querySelector('.img-card[data-idx="0"]');
+    $card?.classList.add("processing");
+    const $st = document.getElementById("uploadStatus");
+    $st.innerHTML = `<span style="color:var(--orange)">🪄 AI 美化中（10–30 秒）…</span>`;
+    try {
+      const origUrl = galleryImages[0];
+      // 從 Storage URL 抓 blob
+      const res = await fetch(origUrl);
+      if (!res.ok) throw new Error(`原圖載入失敗 ${res.status}`);
+      const origBlob = await res.blob();
+
+      const { blob: enhanced } = await enhanceImage(origBlob);
+      const { url: enhancedUrl } = await uploadImage(enhanced, "item-images", "ai");
+      // 美化版放第 0 張，原圖往後（如沒滿就保留原圖以防萬一）
+      galleryImages = [enhancedUrl, origUrl, ...galleryImages.slice(1)].slice(0, MAX_IMAGES);
+      renderGallery();
+      $st.innerHTML = `<span style="color:var(--leaf-deep, #5C8C44)">✓ AI 美化完成（原圖留在第 2 張）</span>`;
+      toast("✓ 主圖已 AI 美化", "ok");
+      setTimeout(() => $st.textContent = "", 4000);
+    } catch (err) {
+      console.error(err);
+      $st.innerHTML = `<span style="color:var(--tomato)">✕ ${err.message}</span>`;
+      toast("AI 美化失敗：" + err.message, "err");
+    } finally {
+      $card?.classList.remove("processing");
+    }
+  }
+
+  // 主圖 URL 文字框手動修改 → 同步到 galleryImages[0]（不存在就 push）
+  document.getElementById("fImg").addEventListener("input", () => {
+    const url = document.getElementById("fImg").value.trim();
+    if (!url) return;
+    if (galleryImages[0] !== url) {
+      if (!galleryImages.length) galleryImages.push(url);
+      else galleryImages[0] = url;
+      renderGallery();
+    }
   });
 
   // ----- 售價組合編輯器 -----
@@ -410,7 +563,8 @@
       note:            document.getElementById("fNote").value,
       defaultPackSize: Number(document.getElementById("fPack").value || 0),
       boxUnit:         document.getElementById("fBoxUnit").value.trim() || "箱",
-      imageUrl:        document.getElementById("fImg").value.trim(),
+      imageUrl:        galleryImages[0] || document.getElementById("fImg").value.trim(),
+      images:          galleryImages.slice(0, 5),
       desc:            document.getElementById("fDesc").value.trim(),
       visible:         document.getElementById("fVisible").checked,
       priceTiers
