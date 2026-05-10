@@ -9,10 +9,30 @@
 //   settings/lookups 共用下拉資料（供應商、配送員清單等，僅 admin 可寫）
 // =====================================================
 import {
-  db, collection, doc, addDoc, getDoc, getDocs, setDoc,
+  db, storage, collection, doc, addDoc, getDoc, getDocs, setDoc,
   updateDoc, deleteDoc, query, where, orderBy, limit,
-  serverTimestamp, onSnapshot, runTransaction, Timestamp, writeBatch
+  serverTimestamp, onSnapshot, runTransaction, Timestamp, writeBatch,
+  storageRef, uploadBytes, getDownloadURL, deleteObject
 } from "./firebase-config.js";
+
+// ============ Storage 圖片上傳 ============
+// 上傳到 Firebase Storage 並回傳可公開存取的 URL
+// path 範例：item-images/2026-05-10/abc123.jpg
+export async function uploadImage(file, folder = "item-images") {
+  if (!file) throw new Error("沒有選檔案");
+  if (!file.type.startsWith("image/")) throw new Error("只能上傳圖片");
+  if (file.size > 5 * 1024 * 1024) throw new Error("圖片不能超過 5MB");
+
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const stamp = new Date().toISOString().slice(0,10);
+  const id = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const path = `${folder}/${stamp}/${id}`;
+  const ref = storageRef(storage, path);
+
+  const snap = await uploadBytes(ref, file, { contentType: file.type });
+  const url = await getDownloadURL(snap.ref);
+  return { url, path };
+}
 
 const me = () => window.__currentUser || { email:"unknown", name:"unknown", uid:"unknown" };
 

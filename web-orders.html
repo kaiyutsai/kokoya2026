@@ -222,8 +222,12 @@
       const item = items.find(i => i.id === l.itemId);
       const stk = item ? Number(item.stock || 0) : 0;
       const stockWarn = item && stk < l.qty ? `<span class="stk-warn">⚠️ 庫存只剩 ${stk}${l.unit||""}</span>` : "";
+      // 組合資訊（購物網新版會送 tierLabel/tierQty/groups）
+      const tierInfo = (l.tierLabel && l.tierQty > 1)
+        ? `<span style="color:var(--ink-3);font-size:.86rem">（${l.tierLabel} × ${l.groups} 組 = ${l.qty}${l.unit||""}）</span>`
+        : `× ${l.qty}${l.unit||""}`;
       return `<div class="ln">
-        <span>${l.name} × ${l.qty}${l.unit||""} ${stockWarn}</span>
+        <span>${l.name} ${tierInfo} ${stockWarn}</span>
         <span style="color:var(--ink-3)">${fmt.money(l.lineTotal || l.qty*l.price)}</span>
       </div>`;
     }).join("");

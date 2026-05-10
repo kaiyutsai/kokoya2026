@@ -31,6 +31,13 @@ import {
   runTransaction,
   writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBiRLtPYl399g_0w0WVRLpo2wi3WKwqGa8",
@@ -49,12 +56,14 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+const storage = getStorage(app);
 const provider = new GoogleAuthProvider();
 
 export {
-  app, auth, db, provider,
+  app, auth, db, storage, provider,
   signInWithPopup, signOut, onAuthStateChanged,
   collection, doc, addDoc, setDoc, getDoc, getDocs,
   updateDoc, deleteDoc, query, where, orderBy, limit,
-  serverTimestamp, onSnapshot, Timestamp, runTransaction, writeBatch
+  serverTimestamp, onSnapshot, Timestamp, runTransaction, writeBatch,
+  storageRef, uploadBytes, getDownloadURL, deleteObject
 };
