@@ -149,15 +149,19 @@
         <div class="img-gallery" id="imgGallery"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
           <label class="btn ghost" for="fFile" id="btnAddImg" style="cursor:pointer;margin:0">
-            📤 加入圖片
+            📤 加入圖片（不用 AI）
             <input type="file" id="fFile" accept="image/*" multiple style="display:none">
+          </label>
+          <label class="btn primary" for="fAiFile" id="btnAiUpload" style="cursor:pointer;margin:0">
+            🪄 上傳並 AI 美化主圖
+            <input type="file" id="fAiFile" accept="image/*" style="display:none">
           </label>
           <span id="uploadStatus" class="muted" style="font-size:.84rem"></span>
           <span id="galleryCount" class="muted" style="font-size:.78rem;margin-left:auto"></span>
         </div>
-        <p class="muted" style="font-size:.78rem;margin:6px 0 0">
-          🪄 <b>AI 美化主圖</b>：把展示主圖丟給 Gemini 做色彩亮度增強，原圖會保留。<br>
-          支援 jpg/png/webp，單張 8MB 以內。也可以直接在下方貼網址。
+        <p class="muted" style="font-size:.78rem;line-height:1.6;margin:6px 0 0">
+          📤 <b>加入圖片</b>：一般上傳（多選），不會 AI 處理 → 進圖庫。<br>
+          🪄 <b>上傳並 AI 美化主圖</b>：選一張水果照 → 自動上傳 + Gemini 美化 → 美化版成為主圖、原圖保留在第 2 張。
         </p>
         <input class="input" id="fImg" placeholder="主圖網址（自動帶入，也可手動貼）" style="margin-top:10px">
       </div>
@@ -413,7 +417,7 @@
         <img src="${url}" alt="圖${i+1}">
         <div class="actions">
           ${i===0
-            ? `<button type="button" class="ai" data-act="enhance" data-idx="${i}" title="AI 美化主圖">🪄 AI 美化</button>`
+            ? '<span style="flex:1;font-size:.7rem;color:#fff;padding:4px 6px;text-align:center">展示用主圖</span>'
             : `<button type="button" data-act="setMain" data-idx="${i}" title="設為主圖">⭐ 設主圖</button>`}
           <button type="button" class="del" data-act="del" data-idx="${i}" title="移除">✕</button>
         </div>
@@ -426,7 +430,7 @@
     $btnAdd.style.pointerEvents = galleryImages.length >= MAX_IMAGES ? "none" : "auto";
   }
 
-  // gallery 內按鈕事件（設主圖 / 移除 / AI 美化）
+  // gallery 內按鈕事件（設主圖 / 移除）
   document.getElementById("imgGallery").addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
@@ -441,8 +445,6 @@
       const [pic] = galleryImages.splice(idx, 1);
       galleryImages.unshift(pic);
       renderGallery();
-    } else if (act === "enhance") {
-      await enhanceMain();
     }
   });
 
@@ -489,42 +491,66 @@
     e.target.value = "";
   });
 
-  // 主圖 AI 美化：抓主圖 → 丟 Gemini → 美化版插到第 0 張、原圖移到第 2 張
-  async function enhanceMain() {
-    if (!galleryImages.length) return toast("還沒有主圖", "err");
-    const $card = document.querySelector('.img-card[data-idx="0"]');
-    $card?.classList.add("processing");
+  // 「上傳並 AI 美化主圖」：直接給一個 File → 壓縮 → 同時上傳原圖 + Gemini 美化 → 美化版設主圖
+  document.getElementById("fAiFile").addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";        // reset 讓同個檔可重選
+    if (!file) return;
+    await enhanceFromFile(file);
+  });
+
+  async function enhanceFromFile(file) {
+    if (galleryImages.length >= MAX_IMAGES) {
+      return toast(`圖庫已滿 ${MAX_IMAGES} 張，請先刪一張`, "err");
+    }
     const $st = document.getElementById("uploadStatus");
-    $st.innerHTML = `<span style="color:var(--orange)">🪄 AI 美化中（10–30 秒）…</span>`;
+    const $btn = document.getElementById("btnAiUpload");
+    $btn.style.pointerEvents = "none";
+    $btn.style.opacity = ".6";
     try {
-      const origUrl = galleryImages[0];
-      // 1) 先用記憶體裡的 blob（本次剛上傳過的）；沒有才從 URL 抓
-      let origBlob = blobCache.get(origUrl);
-      if (!origBlob) {
-        try {
-          const res = await fetch(origUrl);
-          if (!res.ok) throw new Error(`原圖載入失敗 ${res.status}`);
-          origBlob = await res.blob();
-        } catch (err) {
-          throw new Error("無法讀取原圖（CORS 被擋）。請重新上傳這張主圖再做 AI 美化");
-        }
+      // 1) 壓縮
+      $st.innerHTML = `<span style="color:var(--orange)">🗜️ 壓縮中…</span>`;
+      const compressed = await compressImage(file);
+
+      // 2) 先把原圖上傳到 storage（保留備份）
+      $st.innerHTML = `<span style="color:var(--orange)">📤 上傳原圖…</span>`;
+      const { url: origUrl } = await uploadImage(compressed, "item-images");
+      blobCache.set(origUrl, compressed);
+
+      // 3) AI 美化（記憶體裡的 blob，不從 URL fetch，避免 CORS）
+      $st.innerHTML = `<span style="color:var(--orange)">🪄 AI 美化中（10–30 秒）…</span>`;
+      let enhancedUrl = null;
+      try {
+        const { blob: enhanced } = await enhanceImage(compressed);
+        const r = await uploadImage(enhanced, "item-images", "ai");
+        enhancedUrl = r.url;
+        blobCache.set(enhancedUrl, enhanced);
+      } catch (err) {
+        console.error(err);
+        // AI 美化失敗 → 用原圖當主圖，給訊息
+        const slots = MAX_IMAGES - galleryImages.length;
+        if (slots > 0) galleryImages.unshift(origUrl);
+        renderGallery();
+        $st.innerHTML = `<span style="color:var(--tomato)">⚠️ AI 美化失敗（${err.message}）原圖已上傳當主圖</span>`;
+        toast("AI 美化失敗：" + err.message, "err");
+        return;
       }
 
-      const { blob: enhanced } = await enhanceImage(origBlob);
-      const { url: enhancedUrl } = await uploadImage(enhanced, "item-images", "ai");
-      blobCache.set(enhancedUrl, enhanced);
-      // 美化版放第 0 張，原圖往後（如沒滿就保留原圖以防萬一）
-      galleryImages = [enhancedUrl, origUrl, ...galleryImages.slice(1)].slice(0, MAX_IMAGES);
+      // 4) 美化版放第 0 張、原圖放第 1 張（如果空間夠）
+      const next = [enhancedUrl];
+      if (galleryImages.length < MAX_IMAGES) next.push(origUrl);
+      galleryImages = [...next, ...galleryImages].slice(0, MAX_IMAGES);
       renderGallery();
-      $st.innerHTML = `<span style="color:var(--leaf-deep, #5C8C44)">✓ AI 美化完成（原圖留在第 2 張）</span>`;
+      $st.innerHTML = `<span style="color:var(--leaf-deep, #5C8C44)">✓ AI 美化完成！主圖 = 美化版、第 2 張 = 原圖</span>`;
       toast("✓ 主圖已 AI 美化", "ok");
-      setTimeout(() => $st.textContent = "", 4000);
+      setTimeout(() => $st.textContent = "", 4500);
     } catch (err) {
       console.error(err);
       $st.innerHTML = `<span style="color:var(--tomato)">✕ ${err.message}</span>`;
-      toast("AI 美化失敗：" + err.message, "err");
+      toast("失敗：" + err.message, "err");
     } finally {
-      $card?.classList.remove("processing");
+      $btn.style.pointerEvents = "auto";
+      $btn.style.opacity = "1";
     }
   }
 

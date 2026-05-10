@@ -5,7 +5,13 @@
 // =====================================================
 import { getSecrets } from "./data.js";
 
-const MODEL = "gemini-2.5-flash-image-preview";   // 若官方換名稱可在這裡改
+// 試多個 model name（Google 改過幾次名字）— 由新到舊
+const MODEL_CANDIDATES = [
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-image-preview",
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.0-flash-exp"
+];
 
 let cachedKey = null;
 async function getApiKey() {
@@ -89,27 +95,45 @@ export async function enhanceImage(blob, prompt = DEFAULT_PROMPT) {
     }
   };
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    let detail = "";
-    try { detail = (await res.json())?.error?.message || ""; } catch {}
-    throw new Error(`AI 美化失敗 (${res.status}) ${detail}`);
+  let lastErr = null;
+  for (const model of MODEL_CANDIDATES) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      // 404 通常是 model name 換掉 → 試下一個
+      if (res.status === 404) {
+        lastErr = new Error(`model ${model} 不存在`);
+        continue;
+      }
+      if (!res.ok) {
+        let detail = "";
+        try { detail = (await res.json())?.error?.message || ""; } catch {}
+        throw new Error(`AI 美化失敗 (${res.status}) ${detail}`);
+      }
+      const json = await res.json();
+      const parts = json?.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find(p => p.inlineData);
+      if (!imgPart) {
+        const textPart = parts.find(p => p.text)?.text || "";
+        // 該 model 不支援 image 輸出 → 試下一個
+        if (/not.*support|modal/i.test(textPart) || !textPart) {
+          lastErr = new Error(`model ${model} 沒回傳圖片`);
+          continue;
+        }
+        throw new Error("AI 沒回傳圖片（訊息：" + textPart.slice(0,80) + "）");
+      }
+      const outMime = imgPart.inlineData.mimeType || "image/png";
+      const outBlob = base64ToBlob(imgPart.inlineData.data, outMime);
+      return { blob: outBlob, mimeType: outMime, model };
+    } catch (err) {
+      lastErr = err;
+      // 真的錯誤（非 404）就直接拋出
+      if (!/不存在|沒回傳/.test(err.message)) throw err;
+    }
   }
-
-  const json = await res.json();
-  const parts = json?.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find(p => p.inlineData);
-  if (!imgPart) {
-    const textPart = parts.find(p => p.text)?.text || "";
-    throw new Error("AI 沒回傳圖片" + (textPart ? `（訊息：${textPart.slice(0,80)}）` : ""));
-  }
-  const outMime = imgPart.inlineData.mimeType || "image/png";
-  const outBlob = base64ToBlob(imgPart.inlineData.data, outMime);
-  return { blob: outBlob, mimeType: outMime };
+  throw lastErr || new Error("所有可用的 Gemini 圖片模型都試過了，請到 Google AI Studio 確認 API key 有開圖片生成權限");
 }
