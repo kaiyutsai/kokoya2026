@@ -266,7 +266,11 @@
           <span class="wo-status s-${status}">${STATUS_TEXT[status] || status}</span>
         </div>
         <div class="wo-meta">
-          <b>${o.customer || "—"}</b> · ${o.phone || "—"} · ${o.method || "—"}
+          <span class="cust-line" data-id="${o.id}">
+            <b>${o.customer || "(未填名稱)"}</b>${o.isMember?'<span class="src-tag" style="background:#E9F5DC;color:var(--leaf-deep);margin-left:4px">👤 會員</span>':'<span class="src-tag" style="background:#F0E6D0;color:#8a6a40;margin-left:4px">👻 訪客</span>'}
+            <button class="btn ghost icon-only" data-act="editName" data-id="${o.id}" title="編輯購買者姓名" style="margin-left:4px;padding:2px 6px;font-size:.8rem">✏️</button>
+          </span>
+          · 📞 <b>${o.phone || "—"}</b>${!o.isMember && o.phone ? `<span class="muted" style="font-size:.78rem"> (訪客ID)</span>`:""} · ${o.method || "—"}
           ${o.pickupLocation ? `<br>📍 自取地點：<b>${o.pickupLocation}</b>` : ""}
           ${o.address        ? `<br>📍 地址：${o.address}` : ""}
           ${o.carrier        ? `<br>❄️ 物流商：${o.carrier}` : ""}
@@ -316,6 +320,15 @@
       try {
         await updateWebOrderStatus(id, { status: "new" });
         toast("已重新開啟", "ok");
+      } catch (err) { toast(err.message, "err"); }
+    } else if (act === "editName") {
+      const newName = prompt(`修改購買者姓名（電話 ${order.phone}）：`, order.customer || "");
+      if (newName === null) return;
+      const v = newName.trim();
+      if (!v) return toast("名稱不能空白", "err");
+      try {
+        await updateWebOrderStatus(id, { customer: v });
+        toast("✓ 已更新姓名", "ok");
       } catch (err) { toast(err.message, "err"); }
     } else if (act === "delete") {
       if (!confirm(`永久刪除這筆訂單？（不會反向影響已建的銷貨/出貨單）`)) return;

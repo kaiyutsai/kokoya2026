@@ -194,6 +194,14 @@
         }
         .img-card.is-main { border-color: var(--orange-d, #C97B4B); box-shadow: 0 0 0 2px rgba(232,162,102,.3); }
         .img-card img { width: 100%; height: 100%; object-fit: cover; }
+        .img-card-bg {
+          position: absolute; inset: 0;
+        }
+        .img-card .actions button[data-act="crop"] {
+          background: rgba(232,162,102,.95);
+          color: #fff;
+          font-weight: 700;
+        }
         .img-card .badge-main {
           position: absolute; top: 6px; left: 6px;
           background: var(--orange-d, #C97B4B); color: #fff;
@@ -256,6 +264,68 @@
         <button type="submit" class="btn primary">儲存</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- 裁切編輯器 modal -->
+<div class="modal-mask" id="cropModal">
+  <div class="modal" style="max-width:520px">
+    <div class="card-h" style="margin:0">
+      <h3>🎯 調整裁切位置</h3>
+      <button type="button" class="btn ghost icon-only" id="cropCancel">✕</button>
+    </div>
+    <p class="muted" style="font-size:.86rem;line-height:1.7;margin:6px 0 12px">
+      <b>拖曳</b>下方預覽圖移動位置，<b>滑桿</b>調縮放。下面就是購物網商品卡會顯示的樣子。
+    </p>
+    <div class="crop-viewport" id="cropViewport">
+      <div class="crop-inner" id="cropInner"></div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>縮放：<span id="cropZoomLabel">1.0x</span></label>
+      <input type="range" id="cropZoom" min="1" max="3" step="0.05" value="1" style="width:100%">
+    </div>
+    <div class="flex" style="gap:10px;margin-top:10px;flex-wrap:wrap">
+      <button type="button" class="btn ghost" id="cropReset">↺ 回中央 / 1x</button>
+      <button type="button" class="btn ghost" style="margin-left:auto" id="cropCancel2">取消</button>
+      <button type="button" class="btn primary" id="cropSave">💾 套用</button>
+    </div>
+    <style>
+      .crop-viewport {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        border: 2px solid var(--orange-d, #C97B4B);
+        border-radius: var(--r-md);
+        background: #fff;
+        overflow: hidden;
+        touch-action: none;
+        cursor: grab;
+        user-select: none;
+      }
+      .crop-viewport.dragging { cursor: grabbing; }
+      .crop-viewport::after {
+        content: "🛒 購物網會看到這裡";
+        position: absolute;
+        right: 6px; bottom: 6px;
+        background: rgba(0,0,0,.55);
+        color: #fff;
+        font-size: .68rem;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-weight: 700;
+        pointer-events: none;
+      }
+      .crop-inner {
+        position: absolute;
+        inset: 0;
+        background-repeat: no-repeat;
+        background-position: 50% 50%;
+        background-size: cover;
+      }
+      input[type="range"] {
+        accent-color: var(--orange);
+      }
+    </style>
   </div>
 </div>
 
@@ -360,6 +430,11 @@
     // 載入圖庫：以 item.images 為主；舊資料只有 imageUrl → 補進去
     galleryImages = Array.isArray(item?.images) ? [...item.images] : [];
     if (item?.imageUrl && !galleryImages.includes(item.imageUrl)) galleryImages.unshift(item.imageUrl);
+    // 載入裁切設定（沒設定時用預設）
+    const srcPos = Array.isArray(item?.imagePositions) ? item.imagePositions : [];
+    const srcScl = Array.isArray(item?.imageScales)    ? item.imageScales    : [];
+    galleryPositions = galleryImages.map((_, i) => srcPos[i] || "50% 50%");
+    galleryScales    = galleryImages.map((_, i) => Number(srcScl[i]) || 1);
     renderGallery();
     document.getElementById("fDesc").value    = item?.desc || "";
     // visible 欄位：新增時預設 true；編輯時用既有值（未設定的舊資料也視為 true）
@@ -400,6 +475,11 @@
   //   imageUrl = galleryImages[0]（給購物網用）
   //   images   = galleryImages（完整清單）
   let galleryImages = [];
+  // 跟 galleryImages 平行的兩個陣列，每張圖一份
+  //   galleryPositions[i] = "50% 50%"   ← object-position (預設置中)
+  //   galleryScales[i]    = 1            ← 縮放倍率 (1 = cover 原始)
+  let galleryPositions = [];
+  let galleryScales = [];
   // 暫存本次上傳的原檔 blob（key=url, value=Blob）
   // 用於 AI 美化避免從 storage URL 重新 fetch（會被 CORS 擋）
   const blobCache = new Map();
@@ -411,18 +491,26 @@
     const $main = document.getElementById("fImg");
     const $btnAdd = document.getElementById("btnAddImg");
 
-    $g.innerHTML = galleryImages.map((url, i) => `
-      <div class="img-card${i===0?' is-main':''}" data-idx="${i}">
-        ${i===0 ? '<span class="badge-main">⭐ 主圖</span>' : ''}
-        <img src="${url}" alt="圖${i+1}">
-        <div class="actions">
-          ${i===0
-            ? '<span style="flex:1;font-size:.7rem;color:#fff;padding:4px 6px;text-align:center">展示用主圖</span>'
-            : `<button type="button" data-act="setMain" data-idx="${i}" title="設為主圖">⭐ 設主圖</button>`}
-          <button type="button" class="del" data-act="del" data-idx="${i}" title="移除">✕</button>
+    $g.innerHTML = galleryImages.map((url, i) => {
+      const pos = galleryPositions[i] || "50% 50%";
+      const scl = galleryScales[i] || 1;
+      const sizePct = Math.round(scl * 100);
+      // 用 background-image 而不是 img，方便縮放 + 平移裁切預覽
+      const bg = `background-image:url('${url.replace(/'/g,"\\'")}');background-position:${pos};background-size:${sizePct}% auto;background-repeat:no-repeat`;
+      return `
+        <div class="img-card${i===0?' is-main':''}" data-idx="${i}">
+          ${i===0 ? '<span class="badge-main">⭐ 主圖</span>' : ''}
+          <div class="img-card-bg" style="${bg}"></div>
+          <div class="actions">
+            <button type="button" data-act="crop" data-idx="${i}" title="調整裁切位置">🎯</button>
+            ${i===0
+              ? '<span style="flex:1;font-size:.7rem;color:#fff;padding:4px 6px;text-align:center">展示用主圖</span>'
+              : `<button type="button" data-act="setMain" data-idx="${i}" title="設為主圖">⭐ 設主圖</button>`}
+            <button type="button" class="del" data-act="del" data-idx="${i}" title="移除">✕</button>
+          </div>
         </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
 
     $cnt.textContent = `${galleryImages.length} / ${MAX_IMAGES}`;
     $main.value = galleryImages[0] || "";
@@ -430,7 +518,7 @@
     $btnAdd.style.pointerEvents = galleryImages.length >= MAX_IMAGES ? "none" : "auto";
   }
 
-  // gallery 內按鈕事件（設主圖 / 移除）
+  // gallery 內按鈕事件（設主圖 / 移除 / 裁切）
   document.getElementById("imgGallery").addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
@@ -440,13 +528,115 @@
     if (act === "del") {
       if (!confirm("確定移除這張圖片？")) return;
       galleryImages.splice(idx, 1);
+      galleryPositions.splice(idx, 1);
+      galleryScales.splice(idx, 1);
       renderGallery();
     } else if (act === "setMain") {
       const [pic] = galleryImages.splice(idx, 1);
+      const [pos] = galleryPositions.splice(idx, 1);
+      const [scl] = galleryScales.splice(idx, 1);
       galleryImages.unshift(pic);
+      galleryPositions.unshift(pos);
+      galleryScales.unshift(scl);
       renderGallery();
+    } else if (act === "crop") {
+      openCropEditor(idx);
     }
   });
+
+  // 新上傳的圖預設 position / scale
+  function pushDefaultCrop() {
+    galleryPositions.push("50% 50%");
+    galleryScales.push(1);
+  }
+  function unshiftDefaultCrop() {
+    galleryPositions.unshift("50% 50%");
+    galleryScales.unshift(1);
+  }
+
+  // ===== 裁切編輯器 =====
+  const $cropModal = document.getElementById("cropModal");
+  const $cropVp    = document.getElementById("cropViewport");
+  const $cropInner = document.getElementById("cropInner");
+  const $cropZoom  = document.getElementById("cropZoom");
+  const $cropZoomLabel = document.getElementById("cropZoomLabel");
+  let cropState = { idx: -1, x: 50, y: 50, zoom: 1 };
+
+  function openCropEditor(idx) {
+    const url = galleryImages[idx];
+    if (!url) return;
+    cropState.idx = idx;
+    const [x, y] = (galleryPositions[idx] || "50% 50%").split(" ").map(s => parseFloat(s));
+    cropState.x = isNaN(x) ? 50 : x;
+    cropState.y = isNaN(y) ? 50 : y;
+    cropState.zoom = Number(galleryScales[idx]) || 1;
+    $cropInner.style.backgroundImage = `url('${url.replace(/'/g,"\\'")}')`;
+    applyCropPreview();
+    $cropZoom.value = String(cropState.zoom);
+    $cropZoomLabel.textContent = cropState.zoom.toFixed(2) + "x";
+    $cropModal.classList.add("show");
+  }
+  function applyCropPreview() {
+    $cropInner.style.backgroundPosition = `${cropState.x}% ${cropState.y}%`;
+    $cropInner.style.backgroundSize = `${Math.round(cropState.zoom * 100)}% auto`;
+  }
+  $cropZoom.addEventListener("input", () => {
+    cropState.zoom = Number($cropZoom.value);
+    $cropZoomLabel.textContent = cropState.zoom.toFixed(2) + "x";
+    applyCropPreview();
+  });
+  document.getElementById("cropReset").addEventListener("click", () => {
+    cropState.x = 50; cropState.y = 50; cropState.zoom = 1;
+    $cropZoom.value = "1"; $cropZoomLabel.textContent = "1.00x";
+    applyCropPreview();
+  });
+  document.getElementById("cropCancel").addEventListener("click", () => $cropModal.classList.remove("show"));
+  document.getElementById("cropCancel2").addEventListener("click", () => $cropModal.classList.remove("show"));
+  $cropModal.addEventListener("click", e => { if (e.target === $cropModal) $cropModal.classList.remove("show"); });
+  document.getElementById("cropSave").addEventListener("click", () => {
+    if (cropState.idx < 0) return;
+    galleryPositions[cropState.idx] = `${cropState.x.toFixed(1)}% ${cropState.y.toFixed(1)}%`;
+    galleryScales[cropState.idx] = cropState.zoom;
+    renderGallery();
+    $cropModal.classList.remove("show");
+    toast("✓ 裁切已套用", "ok");
+  });
+
+  // 拖曳調整
+  (function setupDrag() {
+    let dragging = false, startX = 0, startY = 0, startBgX = 50, startBgY = 50;
+    const onDown = (e) => {
+      const p = e.touches?.[0] || e;
+      dragging = true;
+      startX = p.clientX; startY = p.clientY;
+      startBgX = cropState.x; startBgY = cropState.y;
+      $cropVp.classList.add("dragging");
+    };
+    const onMove = (e) => {
+      if (!dragging) return;
+      const p = e.touches?.[0] || e;
+      const rect = $cropVp.getBoundingClientRect();
+      // 拖曳：往右拖 → 看到圖的左邊 → bg-position x 變小
+      // delta px → 對應 bg-position % 變化（要考慮 zoom 倍率，zoom 越大移動同樣 px 對應 % 越小）
+      const dx = (p.clientX - startX) / rect.width * 100;
+      const dy = (p.clientY - startY) / rect.height * 100;
+      // bg-position 是「圖的某點對齊容器的某點」，往右拖 = bg-position x 增加（圖往右）
+      // 但其實 background-position 是反的：x 越大 = 圖往左（顯示靠右的部分）
+      // 用「往右拖 → 圖跟著移到右」的直覺 → x 減少
+      cropState.x = Math.max(0, Math.min(100, startBgX - dx / Math.max(cropState.zoom - 1, 0.01)));
+      cropState.y = Math.max(0, Math.min(100, startBgY - dy / Math.max(cropState.zoom - 1, 0.01)));
+      // 當 zoom=1 時沒辦法拖（cover 已經佔滿）
+      if (cropState.zoom <= 1.01) { cropState.x = 50; cropState.y = 50; }
+      applyCropPreview();
+    };
+    const onUp = () => { dragging = false; $cropVp.classList.remove("dragging"); };
+    $cropVp.addEventListener("mousedown", onDown);
+    $cropVp.addEventListener("touchstart", onDown, { passive: true });
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchend", onUp);
+  })();
 
   // 加入新圖（支援多選）
   document.getElementById("fFile").addEventListener("change", async (e) => {
@@ -471,6 +661,7 @@
         $st.innerHTML = `<span style="color:var(--orange)">📤 上傳中 ${i+1}/${tasks.length}（${beforeKB}KB → ${afterKB}KB）…</span>`;
         const { url } = await uploadImage(compressed, "item-images");
         galleryImages.push(url);
+        pushDefaultCrop();
         blobCache.set(url, compressed);   // 暫存壓縮版給 AI 美化用
         renderGallery();
         okCnt++;
@@ -529,7 +720,10 @@
         console.error(err);
         // AI 美化失敗 → 用原圖當主圖，給訊息
         const slots = MAX_IMAGES - galleryImages.length;
-        if (slots > 0) galleryImages.unshift(origUrl);
+        if (slots > 0) {
+          galleryImages.unshift(origUrl);
+          unshiftDefaultCrop();
+        }
         renderGallery();
         $st.innerHTML = `<span style="color:var(--tomato)">⚠️ AI 美化失敗（${err.message}）原圖已上傳當主圖</span>`;
         toast("AI 美化失敗：" + err.message, "err");
@@ -537,9 +731,17 @@
       }
 
       // 4) 美化版放第 0 張、原圖放第 1 張（如果空間夠）
-      const next = [enhancedUrl];
-      if (galleryImages.length < MAX_IMAGES) next.push(origUrl);
-      galleryImages = [...next, ...galleryImages].slice(0, MAX_IMAGES);
+      const nextUrls = [enhancedUrl];
+      const nextPos  = ["50% 50%"];
+      const nextScl  = [1];
+      if (galleryImages.length < MAX_IMAGES) {
+        nextUrls.push(origUrl);
+        nextPos.push("50% 50%");
+        nextScl.push(1);
+      }
+      galleryImages   = [...nextUrls, ...galleryImages].slice(0, MAX_IMAGES);
+      galleryPositions = [...nextPos,  ...galleryPositions].slice(0, MAX_IMAGES);
+      galleryScales    = [...nextScl,  ...galleryScales].slice(0, MAX_IMAGES);
       renderGallery();
       $st.innerHTML = `<span style="color:var(--leaf-deep, #5C8C44)">✓ AI 美化完成！主圖 = 美化版、第 2 張 = 原圖</span>`;
       toast("✓ 主圖已 AI 美化", "ok");
@@ -559,8 +761,15 @@
     const url = document.getElementById("fImg").value.trim();
     if (!url) return;
     if (galleryImages[0] !== url) {
-      if (!galleryImages.length) galleryImages.push(url);
-      else galleryImages[0] = url;
+      if (!galleryImages.length) {
+        galleryImages.push(url);
+        pushDefaultCrop();
+      } else {
+        galleryImages[0] = url;
+        // 換新圖，把第 0 張的 crop 重設
+        galleryPositions[0] = "50% 50%";
+        galleryScales[0] = 1;
+      }
       renderGallery();
     }
   });
@@ -639,6 +848,8 @@
       boxUnit:         document.getElementById("fBoxUnit").value.trim() || "箱",
       imageUrl:        galleryImages[0] || document.getElementById("fImg").value.trim(),
       images:          galleryImages.slice(0, 5),
+      imagePositions:  galleryPositions.slice(0, 5),
+      imageScales:     galleryScales.slice(0, 5),
       desc:            document.getElementById("fDesc").value.trim(),
       visible:         document.getElementById("fVisible").checked,
       priceTiers
