@@ -43,6 +43,20 @@
     </section>
   </div>
 
+  <!-- 補貨建議（依銷售速度推算剩幾天會售完） -->
+  <section class="card" id="restockSection" style="margin-top:18px;display:none">
+    <div class="card-h">
+      <h2>🛒 補貨建議 <span class="muted" id="restockHint" style="font-size:.84rem;font-weight:400">依近 30 天銷售速度推算</span></h2>
+      <a href="purchase.html" class="muted">前往進貨 →</a>
+    </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>品項</th><th class="num">目前庫存</th><th class="num">日均銷售</th><th class="num">預估剩餘天數</th><th>建議</th></tr></thead>
+        <tbody id="restockList"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="card" style="margin-top:18px">
     <div class="card-h">
       <h2>📦 庫存清單</h2>
@@ -191,6 +205,54 @@
         </tr>`;
       }).join("")
     : `<tr><td colspan="6" class="empty">尚無品項，去「品項清單」新增</td></tr>`;
+
+  // ---- 補貨建議（依近 30 天銷售速度推算每個品項剩幾天會售完） ----
+  const last30Sales = sales.filter(s => {
+    const d = s.date.toDate ? s.date.toDate() : new Date(s.date);
+    const diff = (today - d) / 86400000;
+    return diff >= 0 && diff <= 30;
+  });
+  // 每個 itemId 30 天賣多少
+  const qty30By = {};
+  last30Sales.forEach(s => (s.lines||[]).forEach(l => {
+    if (!l.itemId) return;
+    qty30By[l.itemId] = (qty30By[l.itemId] || 0) + (Number(l.qty) || 0);
+  }));
+  // 算每項剩幾天 + 排序
+  const restock = items
+    .filter(i => i.visible !== false)
+    .map(i => {
+      const sold30 = qty30By[i.id] || 0;
+      const dailyRate = sold30 / 30;
+      const stock = Number(i.stock || 0);
+      const daysLeft = dailyRate > 0 ? Math.floor(stock / dailyRate) : null;
+      return { ...i, sold30, dailyRate, daysLeft };
+    })
+    .filter(r => {
+      // 顯示條件：日均 > 0 且 (剩 ≤ 7 天 OR 已售完且最近賣得不錯)
+      if (r.dailyRate <= 0) return false;
+      if (Number(r.stock || 0) <= 0) return true;
+      return r.daysLeft !== null && r.daysLeft <= 7;
+    })
+    .sort((a,b) => (a.daysLeft ?? 999) - (b.daysLeft ?? 999));
+
+  if (restock.length) {
+    document.getElementById("restockSection").style.display = "block";
+    document.getElementById("restockList").innerHTML = restock.map(r => {
+      const stk = Number(r.stock || 0);
+      const tag = stk <= 0 ? `<span class="tag out">已售完！立即補</span>`
+                 : r.daysLeft <= 2 ? `<span class="tag" style="background:#FFD9D2;color:var(--tomato)">2 天內售完</span>`
+                 : r.daysLeft <= 5 ? `<span class="tag warn">建議補貨</span>`
+                 : `<span class="tag" style="background:#FFF2C9;color:#B07418">注意觀察</span>`;
+      return `<tr>
+        <td><b>${r.name}</b>${r.category?` <span class="muted">· ${r.category}</span>`:""}</td>
+        <td class="num">${fmt.num(stk)} ${r.unit||""}</td>
+        <td class="num">${r.dailyRate.toFixed(1)} ${r.unit||""}/天</td>
+        <td class="num">${stk <= 0 ? "—" : r.daysLeft + " 天"}</td>
+        <td>${tag}</td>
+      </tr>`;
+    }).join("");
+  }
 
   // ---- 最近銷貨 ----
   const recent = sales.slice(0, 6);

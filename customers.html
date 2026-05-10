@@ -8,8 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <style>
-  .cust-row { display: grid; grid-template-columns: 50px 1fr 130px 100px; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px dashed var(--line); }
+  .cust-row { display: grid; grid-template-columns: 50px 1fr 130px 120px; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px dashed var(--line); cursor: pointer; transition: background .12s; }
   .cust-row:hover { background: var(--paper-2); }
+  .cust-row a, .cust-row a:hover { color: inherit; text-decoration: none; }
   .cust-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); background: var(--paper-2); }
   .cust-avatar.fallback { display: grid; place-items: center; font-size: 1.4rem; }
   .cust-name { font-weight: 700; color: var(--ink-1); font-size: 1rem; }
@@ -108,7 +109,7 @@
         if (c.address) phoneAddr.push(`📍 ${c.address}`);
         const lastLoginStr = c.lastLogin?.toDate ? fmtDate(c.lastLogin) : "—";
         const lastOrderStr = order.last ? fmtDate(new Date(order.last)) : "—";
-        return `<div class="cust-row">
+        return `<a class="cust-row" href="customer-detail.html?uid=${encodeURIComponent(c.uid)}">
           ${avatar}
           <div>
             <div class="cust-name">${dispName}</div>
@@ -122,7 +123,7 @@
             <span class="order-badge">${order.count} 單</span>
             <div class="muted" style="font-size:.78rem;margin-top:4px">累計 ${fmt.money(order.total)}<br>最後 ${lastOrderStr}</div>
           </div>
-        </div>`;
+        </a>`;
       }).join("") + `</div>`;
   }
 

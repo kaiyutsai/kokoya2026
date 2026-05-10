@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>會員詳細 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .profile-head {
+    display: flex; gap: 18px; align-items: center;
+    padding: 18px 22px;
+    background: linear-gradient(135deg, #FFF6E6, #FBE0C2);
+    border-radius: var(--r-md);
+    margin-bottom: 18px;
+    border: 1px solid var(--line);
+  }
+  .profile-head .avatar { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 2px solid #fff; box-shadow: var(--shadow-sm); background: #fff; }
+  .profile-head .avatar.fallback { display: grid; place-items: center; font-size: 2.4rem; }
+  .profile-head .name { font-size: 1.4rem; font-weight: 700; color: var(--ink-1); margin: 0 0 4px; font-family: "Noto Serif TC"; }
+  .profile-head .email { color: var(--ink-3); font-size: .92rem; }
+  .profile-meta { font-size: .9rem; color: var(--ink-2); margin-top: 6px; line-height: 1.7; }
+  .profile-meta .lbl { color: var(--ink-3); font-size: .82rem; }
+
+  .order-row { padding: 14px 18px; border-bottom: 1px dashed var(--line); }
+  .order-h-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+  .order-id { font-family: monospace; background: var(--paper-2); padding: 3px 10px; border-radius: var(--r-pill); font-size: .82rem; font-weight: 700; }
+  .order-status { padding: 3px 10px; border-radius: var(--r-pill); font-size: .78rem; font-weight: 600; }
+  .order-status.new        { background: #FFE4C4; color: #C97B4B; }
+  .order-status.processing { background: #DBE5CC; color: var(--leaf-deep); }
+  .order-status.completed  { background: #C9D5B7; color: var(--leaf-deep); }
+  .order-status.cancelled  { background: #E0CDAA; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<main class="container">
+  <div style="margin-bottom:14px"><a href="customers.html" class="muted">← 回會員清單</a></div>
+
+  <div id="loading" class="muted" style="text-align:center;padding:60px">載入中…</div>
+  <div id="content" class="hidden">
+    <!-- profile head -->
+    <div class="profile-head" id="profileHead"></div>
+
+    <!-- 統計 -->
+    <div class="grid cols-4">
+      <div class="stat accent-orange"><div class="label">訂單總數</div><div class="value" id="sCount">0</div><div class="ico">📦</div></div>
+      <div class="stat accent-tomato"><div class="label">累計金額</div><div class="value" id="sTotal">$0</div><div class="ico">💰</div></div>
+      <div class="stat accent-leaf"><div class="label">平均單金額</div><div class="value" id="sAvg">$0</div><div class="ico">📊</div></div>
+      <div class="stat accent-lemon"><div class="label">最後訂購</div><div class="value" id="sLast" style="font-size:1.1rem">—</div><div class="ico">🕐</div></div>
+    </div>
+
+    <section class="card" style="margin-top:18px">
+      <div class="card-h">
+        <h2>📒 訂單紀錄</h2>
+        <button class="btn ghost" id="btnExport">📥 匯出 CSV</button>
+      </div>
+      <div id="orderList"></div>
+    </section>
+
+    <!-- 喜好分析 -->
+    <section class="card" style="margin-top:18px">
+      <div class="card-h"><h2>🍓 常買品項</h2></div>
+      <div class="table-wrap">
+        <table class="tb">
+          <thead><tr><th>品項</th><th class="num">買過次數</th><th class="num">總購買量</th><th class="num">累計金額</th></tr></thead>
+          <tbody id="favItems"><tr><td colspan="4" class="empty">無資料</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { db, doc, getDoc, collection, query, where, getDocs } from "./js/firebase-config.js";
+  import { exportCsv, fmtDate } from "./js/csv.js";
+
+  const me = await mountShell({ active: "customers" });
+  const $ = id => document.getElementById(id);
+
+  const url = new URL(location.href);
+  const uid = url.searchParams.get("uid");
+  if (!uid) {
+    $("loading").innerHTML = `沒有指定會員 uid，<a href="customers.html">回清單</a>`;
+  } else {
+    load(uid);
+  }
+
+  async function load(uid) {
+    try {
+      const profileSnap = await getDoc(doc(db, "customers", uid));
+      if (!profileSnap.exists()) {
+        $("loading").innerHTML = `找不到此會員，<a href="customers.html">回清單</a>`;
+        return;
+      }
+      const profile = profileSnap.data();
+
+      // 撈這個會員的所有訂單
+      const ordSnap = await getDocs(query(collection(db, "webOrders"), where("customerUid", "==", uid)));
+      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a,b) => (b.createdAt?.toMillis?.()||0) - (a.createdAt?.toMillis?.()||0));
+
+      renderProfile(profile);
+      renderStats(orders);
+      renderOrders(orders);
+      renderFavItems(orders);
+      bindExport(orders, profile);
+
+      $("loading").classList.add("hidden");
+      $("content").classList.remove("hidden");
+    } catch (err) {
+      $("loading").innerHTML = `載入失敗：${err.message}`;
+    }
+  }
+
+  function renderProfile(p) {
+    const dispName = p.name || p.displayName || (p.email||"").split("@")[0] || "(未命名)";
+    const avatarHtml = p.photoURL
+      ? `<img class="avatar" src="${p.photoURL}" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=&quot;avatar fallback&quot;>👤</div>'">`
+      : `<div class="avatar fallback">👤</div>`;
+    $("profileHead").innerHTML = `
+      ${avatarHtml}
+      <div style="flex:1">
+        <div class="name">${dispName}</div>
+        <div class="email">${p.email || "(無 email)"}</div>
+        <div class="profile-meta">
+          ${p.phone ? `<span class="lbl">電話：</span>${p.phone}　` : ""}
+          ${p.address ? `<br><span class="lbl">地址：</span>${p.address}` : ""}
+          ${p.lastLogin ? `<br><span class="lbl">最後登入：</span>${fmtDate(p.lastLogin)}` : ""}
+        </div>
+      </div>`;
+  }
+
+  function renderStats(orders) {
+    $("sCount").textContent = orders.length;
+    const total = orders.reduce((a,b) => a + (b.total||0), 0);
+    $("sTotal").textContent = fmt.money(total);
+    $("sAvg").textContent = orders.length ? fmt.money(Math.round(total / orders.length)) : "$0";
+    $("sLast").textContent = orders.length ? fmtDate(orders[0].createdAt) : "—";
+  }
+
+  const STATUS_TEXT = {
+    new: "📨 待處理", processing: "👨‍🍳 處理中",
+    completed: "✅ 已完成", cancelled: "❌ 已取消"
+  };
+  function renderOrders(orders) {
+    if (!orders.length) {
+      $("orderList").innerHTML = `<div class="muted" style="text-align:center;padding:30px">這位會員還沒下過單</div>`;
+      return;
+    }
+    $("orderList").innerHTML = orders.map(o => {
+      const status = o.status || "new";
+      const lines = (o.lines || []).map(l => `${l.name}×${l.qty}${l.unit||""}`).join("、");
+      return `<div class="order-row">
+        <div class="order-h-row">
+          <div>
+            <span class="order-id">#${o.id.slice(0,8).toUpperCase()}</span>
+            <span class="order-status ${status}" style="margin-left:6px">${STATUS_TEXT[status] || status}</span>
+          </div>
+          <span class="muted" style="font-size:.84rem">${fmtDate(o.createdAt)}</span>
+        </div>
+        <div style="font-size:.92rem;color:var(--ink-2);line-height:1.6">${lines || "—"}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span class="muted" style="font-size:.84rem">${o.method || "—"}${o.address?` · ${o.address}`:""}</span>
+          <b style="color:var(--tomato)">${fmt.money(o.total)}</b>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderFavItems(orders) {
+    const itemAgg = {};
+    orders.forEach(o => (o.lines||[]).forEach(l => {
+      const k = l.itemId || `__name__${l.name||"未知"}`;
+      if (!itemAgg[k]) itemAgg[k] = { name: l.name || "(已刪)", unit: l.unit || "", times: new Set(), qty: 0, total: 0 };
+      itemAgg[k].times.add(o.id);
+      itemAgg[k].qty   += Number(l.qty) || 0;
+      itemAgg[k].total += Number(l.lineTotal) || 0;
+    }));
+    const arr = Object.values(itemAgg).map(x => ({ ...x, times: x.times.size }))
+      .sort((a,b) => b.times - a.times || b.total - a.total);
+    if (!arr.length) {
+      $("favItems").innerHTML = `<tr><td colspan="4" class="empty">尚無資料</td></tr>`;
+      return;
+    }
+    $("favItems").innerHTML = arr.map(x => `<tr>
+      <td><b>${x.name}</b></td>
+      <td class="num">${x.times} 次</td>
+      <td class="num">${fmt.num(x.qty)} ${x.unit}</td>
+      <td class="num">${fmt.money(x.total)}</td>
+    </tr>`).join("");
+  }
+
+  function bindExport(orders, profile) {
+    $("btnExport").addEventListener("click", () => {
+      if (!orders.length) return toast("沒有訂單可匯出", "err");
+      const rows = orders.map(o => ({
+        orderId: o.id.slice(0,8).toUpperCase(),
+        date: o.createdAt,
+        status: STATUS_TEXT[o.status || "new"],
+        items: (o.lines||[]).map(l => `${l.name}×${l.qty}${l.unit||""}`).join("、"),
+        total: o.total,
+        method: o.method || "",
+        address: o.address || ""
+      }));
+      const fname = `${profile.name || profile.displayName || profile.email || "會員"}_訂單.csv`;
+      exportCsv(fname, rows, [
+        { key: "orderId", label: "訂單編號" },
+        { key: "date", label: "日期", format: fmtDate },
+        { key: "status", label: "狀態" },
+        { key: "items", label: "品項" },
+        { key: "total", label: "金額" },
+        { key: "method", label: "取貨方式" },
+        { key: "address", label: "地址" }
+      ]);
+      toast("✓ CSV 已下載", "ok");
+    });
+  }
+</script>
+</body>
+</html>

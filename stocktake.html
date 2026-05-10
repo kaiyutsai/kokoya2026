@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>庫存盤點 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .st-row { background:#fff; border:1px solid var(--line); border-radius: var(--r-md); padding: 12px 18px; margin-bottom: 10px; }
+  .st-h { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom: 8px; }
+  .diff-pos { color: var(--leaf-deep); font-weight: 700; }
+  .diff-neg { color: var(--tomato); font-weight: 700; }
+  .diff-zero { color: var(--ink-3); }
+  .st-line-pos { background: linear-gradient(90deg,#E5EBDC,transparent); }
+  .st-line-neg { background: linear-gradient(90deg,#FFE4DD,transparent); }
+
+  .stk-input { width: 80px; text-align:right; }
+  .stk-row.has-diff td { background: #FFF6E6; }
+</style>
+</head>
+<body>
+<main class="container">
+
+  <!-- 盤點紀錄列表 -->
+  <section class="card">
+    <div class="card-h">
+      <h2>📒 盤點紀錄 <span class="muted" id="hCount" style="font-size:.84rem;font-weight:400"></span></h2>
+      <button class="btn primary" id="btnNew">＋ 新增盤點</button>
+    </div>
+    <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+      盤點工具。輸入「實際盤到」的數量，系統會記錄差異並更新庫存。
+      <b>盤盈</b>（盤到比系統多）通常是進貨時漏記；<b>盤虧</b>（盤到比系統少）通常是壞掉/掉了/被偷吃。
+    </p>
+    <div id="historyList">
+      <div class="muted" style="text-align:center;padding:30px">載入中…</div>
+    </div>
+  </section>
+
+  <!-- 盤點表單（預設隱藏） -->
+  <section class="card hidden" id="formSection" style="margin-top:18px">
+    <div class="card-h">
+      <h2>📝 開始盤點</h2>
+      <div class="flex" style="gap:8px">
+        <button type="button" class="btn ghost" id="btnAutoCopy" title="把每項實際數量先填成等同系統庫存">⚡ 一鍵帶入系統值</button>
+        <button type="button" class="btn ghost" id="btnCloseForm">✕ 關閉</button>
+      </div>
+    </div>
+    <form id="form">
+      <div class="row-fields">
+        <div class="field"><label>盤點日期</label><input type="date" class="input" id="fDate" required></div>
+        <div class="field"><label>經辦人</label><select class="select" id="fHandler"></select></div>
+        <div class="field"><label>備註</label><input class="input" id="fNote" placeholder="例：月底盤點 / 例行抽查"></div>
+      </div>
+
+      <div style="margin:14px 0 8px"><b>盤點清單</b><span class="muted" style="font-size:.82rem;margin-left:8px">（只填實際數量；空白＝沒盤就不更新）</span></div>
+      <div class="table-wrap">
+        <table class="tb">
+          <thead><tr>
+            <th>品項</th><th>單位</th>
+            <th class="num">系統庫存</th>
+            <th class="num">實際盤到</th>
+            <th class="num">差異</th>
+            <th class="num">差異金額</th>
+          </tr></thead>
+          <tbody id="stkBody"></tbody>
+        </table>
+      </div>
+
+      <div class="grid cols-3" style="margin-top:14px;gap:10px">
+        <div class="stat accent-leaf"><div class="label">盤盈總額</div><div class="value" id="vGain">$0</div></div>
+        <div class="stat accent-tomato"><div class="label">盤虧總額</div><div class="value" id="vLoss">$0</div></div>
+        <div class="stat accent-orange"><div class="label">差異品項數</div><div class="value" id="vDiffCnt">0</div></div>
+      </div>
+
+      <div class="flex" style="justify-content:flex-end;margin-top:14px;gap:8px">
+        <button type="submit" class="btn tomato">💾 儲存盤點（會更新庫存）</button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listItems, addStocktake, listStocktakes, getLookups } from "./js/data.js";
+
+  const me = await mountShell({ active: "stocktake" });
+  const $ = id => document.getElementById(id);
+  $("fDate").value = fmt.dateInput(new Date());
+
+  const lookups = await getLookups().catch(() => ({ handlers: ["凱宇","凱帆","妍慧","于真"] }));
+  $("fHandler").innerHTML = (lookups.handlers || []).map(n => `<option>${n}</option>`).join("");
+  $("fHandler").value = (lookups.handlers||[]).includes(me.name) ? me.name : (lookups.handlers||[])[0] || "";
+
+  let items = [];
+  let history = [];
+
+  async function load() {
+    items = await listItems();
+    history = await listStocktakes({ days: null });
+    renderHistory();
+    renderStkBody();
+  }
+
+  function renderStkBody() {
+    const $body = $("stkBody");
+    if (!items.length) {
+      $body.innerHTML = `<tr><td colspan="6" class="empty">沒有品項</td></tr>`;
+      return;
+    }
+    $body.innerHTML = items
+      .filter(i => i.visible !== false)
+      .sort((a,b) => (a.category||"").localeCompare(b.category||"","zh-Hant") || (a.name||"").localeCompare(b.name||"","zh-Hant"))
+      .map(i => {
+        const stk = Number(i.stock||0);
+        return `<tr class="stk-row" data-id="${i.id}" data-stock="${stk}" data-cost="${Math.round((i.avgCost||0)*100)/100}">
+          <td><b>${i.name}</b>${i.category?` <span class="muted">· ${i.category}</span>`:""}</td>
+          <td>${i.unit||"—"}</td>
+          <td class="num"><b>${fmt.num(stk)}</b></td>
+          <td class="num"><input class="input stk-input" type="number" min="0" step="1" placeholder="—"></td>
+          <td class="num diff-cell">—</td>
+          <td class="num diff-val-cell">—</td>
+        </tr>`;
+      }).join("");
+
+    $body.querySelectorAll(".stk-input").forEach(inp => {
+      inp.addEventListener("input", () => {
+        recalcRow(inp.closest("tr"));
+        recalcSummary();
+      });
+    });
+  }
+
+  function recalcRow(tr) {
+    const stk = Number(tr.dataset.stock) || 0;
+    const cost = Number(tr.dataset.cost) || 0;
+    const inp = tr.querySelector(".stk-input");
+    const val = inp.value;
+    if (val === "") {
+      tr.querySelector(".diff-cell").textContent = "—";
+      tr.querySelector(".diff-val-cell").textContent = "—";
+      tr.classList.remove("has-diff");
+      tr.querySelector(".diff-cell").className = "num diff-cell diff-zero";
+      return;
+    }
+    const actual = Number(val) || 0;
+    const diff = actual - stk;
+    const diffVal = diff * cost;
+    const $diff = tr.querySelector(".diff-cell");
+    const $diffVal = tr.querySelector(".diff-val-cell");
+    if (diff === 0) {
+      $diff.textContent = "0 ✓"; $diff.className = "num diff-cell diff-zero";
+      $diffVal.textContent = "—"; $diffVal.className = "num diff-val-cell diff-zero";
+      tr.classList.remove("has-diff");
+    } else if (diff > 0) {
+      $diff.textContent = `+${diff}`; $diff.className = "num diff-cell diff-pos";
+      $diffVal.textContent = `+${fmt.money(Math.round(diffVal))}`; $diffVal.className = "num diff-val-cell diff-pos";
+      tr.classList.add("has-diff");
+    } else {
+      $diff.textContent = `${diff}`; $diff.className = "num diff-cell diff-neg";
+      $diffVal.textContent = fmt.money(Math.round(diffVal)); $diffVal.className = "num diff-val-cell diff-neg";
+      tr.classList.add("has-diff");
+    }
+  }
+
+  function recalcSummary() {
+    let gain = 0, loss = 0, cnt = 0;
+    document.querySelectorAll(".stk-row").forEach(tr => {
+      const stk = Number(tr.dataset.stock) || 0;
+      const cost = Number(tr.dataset.cost) || 0;
+      const val = tr.querySelector(".stk-input").value;
+      if (val === "") return;
+      const diff = (Number(val) || 0) - stk;
+      const diffVal = diff * cost;
+      if (diff > 0) gain += diffVal;
+      else if (diff < 0) loss += -diffVal;
+      if (diff !== 0) cnt++;
+    });
+    $("vGain").textContent = fmt.money(Math.round(gain));
+    $("vLoss").textContent = fmt.money(Math.round(loss));
+    $("vDiffCnt").textContent = cnt;
+  }
+
+  function renderHistory() {
+    if (!history.length) {
+      $("historyList").innerHTML = `<div class="muted" style="text-align:center;padding:40px;background:#fff;border:1px dashed var(--line);border-radius:var(--r-md)">
+        <div style="font-size:2.4rem">🍃</div>還沒有盤點紀錄
+      </div>`;
+      $("hCount").textContent = "";
+      return;
+    }
+    $("hCount").textContent = `· 共 ${history.length} 次`;
+    $("historyList").innerHTML = history.map(s => {
+      const totalLines = (s.lines || []).filter(l => l.diff !== 0);
+      const showLines = totalLines.slice(0, 8);
+      const more = totalLines.length > 8 ? `<div class="muted" style="font-size:.82rem;margin-top:4px">…還有 ${totalLines.length - 8} 項差異</div>` : "";
+      return `<div class="st-row">
+        <div class="st-h">
+          <div>
+            <b>📋 ${fmt.date(s.date)}</b>
+            <span class="muted" style="margin-left:8px;font-size:.84rem">經辦：${s.handlerName || s.createdByName || "—"}</span>
+            ${s.note ? `<div class="muted" style="font-size:.82rem">${s.note}</div>` : ""}
+          </div>
+          <div style="text-align:right;font-size:.88rem">
+            ${s.totalDiffGain ? `<span class="diff-pos">盤盈 +${fmt.money(Math.round(s.totalDiffGain))}</span>　` : ""}
+            ${s.totalDiffLoss ? `<span class="diff-neg">盤虧 -${fmt.money(Math.round(s.totalDiffLoss))}</span>` : ""}
+            ${(!s.totalDiffGain && !s.totalDiffLoss) ? `<span class="diff-zero">無差異</span>` : ""}
+          </div>
+        </div>
+        ${totalLines.length ? `<table class="tb" style="margin-top:6px"><tbody>
+          ${showLines.map(l => `<tr class="${l.diff>0?'st-line-pos':l.diff<0?'st-line-neg':''}">
+            <td style="padding:6px 10px"><b>${l.name||""}</b></td>
+            <td class="num" style="padding:6px 10px">${l.oldStock} → ${l.newStock} ${l.unit||""}</td>
+            <td class="num" style="padding:6px 10px"><b class="${l.diff>0?'diff-pos':'diff-neg'}">${l.diff>0?'+':''}${l.diff}</b></td>
+            <td class="num" style="padding:6px 10px">${l.diffValue ? fmt.money(Math.round(l.diffValue)) : "—"}</td>
+          </tr>`).join("")}
+        </tbody></table>${more}` : `<div class="muted" style="font-size:.84rem">所有品項盤點一致 ✓</div>`}
+      </div>`;
+    }).join("");
+  }
+
+  // form 顯示/隱藏
+  $("btnNew").addEventListener("click", () => {
+    $("formSection").classList.remove("hidden");
+    setTimeout(() => $("formSection").scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  });
+  $("btnCloseForm").addEventListener("click", () => {
+    $("formSection").classList.add("hidden");
+    document.querySelectorAll(".stk-input").forEach(i => i.value = "");
+    document.querySelectorAll(".stk-row").forEach(tr => recalcRow(tr));
+    recalcSummary();
+  });
+
+  // 一鍵帶入系統庫存值（這樣只要改有差異的）
+  $("btnAutoCopy").addEventListener("click", () => {
+    document.querySelectorAll(".stk-row").forEach(tr => {
+      const stk = tr.dataset.stock;
+      tr.querySelector(".stk-input").value = stk;
+      recalcRow(tr);
+    });
+    recalcSummary();
+    toast("已帶入系統值，請改有差異的品項即可", "ok");
+  });
+
+  $("form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const lines = [...document.querySelectorAll(".stk-row")]
+      .filter(tr => tr.querySelector(".stk-input").value !== "")
+      .map(tr => {
+        const id = tr.dataset.id;
+        const item = items.find(i => i.id === id);
+        return {
+          itemId: id,
+          name: item?.name || "",
+          unit: item?.unit || "",
+          newStock: Number(tr.querySelector(".stk-input").value) || 0
+        };
+      });
+    if (!lines.length) return toast("請至少盤一項", "err");
+    if (!confirm(`確定儲存盤點？${lines.length} 個品項的庫存會更新為實際盤到的數量，無法簡單復原。`)) return;
+    try {
+      await addStocktake({
+        date: new Date($("fDate").value),
+        note: $("fNote").value,
+        handlerName: $("fHandler").value,
+        lines
+      });
+      toast("✓ 盤點已儲存，庫存已更新", "ok");
+      $("formSection").classList.add("hidden");
+      load();
+    } catch (err) {
+      console.error(err);
+      toast("儲存失敗：" + err.message, "err");
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>

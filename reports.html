@@ -37,7 +37,11 @@
 
     <div class="grid cols-4">
       <div class="stat accent-orange"><div class="label">總營收</div><div class="value" id="vRev">—</div></div>
-      <div class="stat accent-leaf"><div class="label">進貨成本</div><div class="value" id="vCost">—</div></div>
+      <div class="stat accent-leaf">
+        <div class="label">總成本</div>
+        <div class="value" id="vCost">—</div>
+        <div class="delta" id="vCostBreak">進貨 — / 耗損 —</div>
+      </div>
       <div class="stat accent-tomato"><div class="label">利潤</div><div class="value" id="vProfit">—</div><div class="delta" id="vMargin">—</div></div>
       <div class="stat accent-lemon"><div class="label">銷售筆數</div><div class="value" id="vCnt">—</div></div>
     </div>
@@ -70,13 +74,48 @@
   <section class="card" style="margin-top:18px">
     <div class="card-h">
       <h3>熱賣品項排行</h3>
-      <span class="muted" style="font-size:.82rem">售出成本=賣出量×平均成本（COGS） · 進貨成本=期間進貨花費 · 利潤用 COGS 算 · 點 ▸ 展開看售出方式</span>
+      <span class="muted" style="font-size:.82rem">售出成本=賣出量×平均成本（COGS） · 進貨成本=期間該品項進貨花費 · 利潤用 COGS 算 · 上方總成本=進貨+耗損 · 點 ▸ 展開看售出方式</span>
     </div>
     <div class="table-wrap">
       <table class="tb" id="rankTable">
         <thead><tr><th style="width:34px"></th><th>排名</th><th>品項</th><th class="num">售出量</th><th class="num">營收</th><th class="num">售出成本</th><th class="num">進貨成本</th><th class="num">利潤</th><th class="num">利潤率</th></tr></thead>
         <tbody id="rank"><tr><td colspan="9" class="empty">載入中…</td></tr></tbody>
       </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h">
+      <h3>🗑 損耗統計</h3>
+      <span class="muted" style="font-size:.82rem">水果壞掉/變質/試吃/樣品贈送的損失</span>
+    </div>
+    <div class="grid cols-2" style="margin-bottom:16px">
+      <div class="stat accent-tomato">
+        <div class="label">期間總損失</div>
+        <div class="value" id="vWasteTotal">—</div>
+        <div class="delta" id="vWasteCnt">— 單</div>
+      </div>
+      <div class="stat accent-leaf">
+        <div class="label">損失佔營收比</div>
+        <div class="value" id="vWastePct">—</div>
+        <div class="delta">營收的多少%是損失</div>
+      </div>
+    </div>
+    <div class="grid cols-2" style="gap:14px">
+      <div>
+        <h4 style="margin:0 0 8px;font-size:.95rem;color:var(--ink-2)">📦 損耗 Top 5 品項</h4>
+        <table class="tb">
+          <thead><tr><th>品項</th><th class="num">損耗量</th><th class="num">損失</th></tr></thead>
+          <tbody id="wasteByItem"><tr><td colspan="3" class="empty">無資料</td></tr></tbody>
+        </table>
+      </div>
+      <div>
+        <h4 style="margin:0 0 8px;font-size:.95rem;color:var(--ink-2)">📋 原因分布</h4>
+        <table class="tb">
+          <thead><tr><th>原因</th><th class="num">單數</th><th class="num">損失</th></tr></thead>
+          <tbody id="wasteByReason"><tr><td colspan="3" class="empty">無資料</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -97,7 +136,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script type="module">
   import { mountShell, fmt } from "./js/app-shell.js";
-  import { listSales, listPurchases, listItems } from "./js/data.js";
+  import { listSales, listPurchases, listItems, listWastes } from "./js/data.js";
 
   await mountShell({ active: "reports" });
 
@@ -203,10 +242,11 @@
   async function load() {
     const value = document.getElementById("range").value;
     // 先撈全部歷史，client 端依範圍切割（避免每次切換都重抓）
-    const [allSales, allPurchases, items] = await Promise.all([
+    const [allSales, allPurchases, items, allWastes] = await Promise.all([
       listSales({ days: null }),
       listPurchases({ days: null }),
-      listItems()
+      listItems(),
+      listWastes({ days: null }).catch(() => [])
     ]);
     refreshMonthOptions(allSales, allPurchases);
     const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
@@ -219,16 +259,20 @@
     };
     const sales     = allSales.filter(inRange);
     const purchases = allPurchases.filter(inRange);
+    const wastes    = allWastes.filter(inRange);
 
-    // KPI（現金流視角：利潤 = 期間營收 − 期間進貨花費）
-    const rev    = sales.reduce((a,b)=>a+(b.total||0), 0);
-    const cost   = purchases.reduce((a,b)=>a+(b.total||0), 0);
-    const profit = rev - cost;
-    document.getElementById("vRev").textContent    = fmt.money(rev);
-    document.getElementById("vCost").textContent   = fmt.money(cost);
-    document.getElementById("vProfit").textContent = fmt.money(profit);
-    document.getElementById("vCnt").textContent    = sales.length;
-    document.getElementById("vMargin").textContent = rev>0 ? `利潤率 ${(profit/rev*100).toFixed(1)}%` : "—";
+    // KPI（現金流視角：成本 = 期間進貨花費 + 期間耗損損失；利潤 = 營收 − 總成本）
+    const rev          = sales.reduce((a,b)=>a+(b.total||0), 0);
+    const purchaseCost = purchases.reduce((a,b)=>a+(b.total||0), 0);
+    const wasteLoss    = wastes.reduce((a,b)=>a+(b.totalLoss||0), 0);
+    const cost         = purchaseCost + wasteLoss;
+    const profit       = rev - cost;
+    document.getElementById("vRev").textContent      = fmt.money(rev);
+    document.getElementById("vCost").textContent     = fmt.money(Math.round(cost));
+    document.getElementById("vCostBreak").textContent = `進貨 ${fmt.money(Math.round(purchaseCost))} / 耗損 ${fmt.money(Math.round(wasteLoss))}`;
+    document.getElementById("vProfit").textContent   = fmt.money(Math.round(profit));
+    document.getElementById("vCnt").textContent      = sales.length;
+    document.getElementById("vMargin").textContent   = rev>0 ? `利潤率 ${(profit/rev*100).toFixed(1)}%` : "—";
 
     // 圖表粒度：auto 時，期間 ≤ 62 天用日、其他用月
     const grainSel = document.getElementById("grain").value;
@@ -247,10 +291,11 @@
           const xd = x.date.toDate ? x.date.toDate() : new Date(x.date);
           return xd.toDateString() === d.toDateString();
         };
-        const dayRev  = sales.filter(sameDay).reduce((a,b)=>a+(b.total||0), 0);
-        const dayCost = purchases.filter(sameDay).reduce((a,b)=>a+(b.total||0), 0);
+        const dayRev   = sales.filter(sameDay).reduce((a,b)=>a+(b.total||0), 0);
+        const dayPur   = purchases.filter(sameDay).reduce((a,b)=>a+(b.total||0), 0);
+        const dayWaste = wastes.filter(sameDay).reduce((a,b)=>a+(b.totalLoss||0), 0);
         rArr.push(dayRev);
-        pArr.push(dayRev - dayCost);
+        pArr.push(dayRev - dayPur - dayWaste);
       }
     } else {
       // 按月 — 列出 start 到 end 之間的月份
@@ -267,10 +312,11 @@
           const xd = x.date.toDate ? x.date.toDate() : new Date(x.date);
           return xd.getFullYear() === m.getFullYear() && xd.getMonth() === m.getMonth();
         };
-        const mRev  = sales.filter(inMonth).reduce((a,b)=>a+(b.total||0), 0);
-        const mCost = purchases.filter(inMonth).reduce((a,b)=>a+(b.total||0), 0);
+        const mRev   = sales.filter(inMonth).reduce((a,b)=>a+(b.total||0), 0);
+        const mPur   = purchases.filter(inMonth).reduce((a,b)=>a+(b.total||0), 0);
+        const mWaste = wastes.filter(inMonth).reduce((a,b)=>a+(b.totalLoss||0), 0);
         rArr.push(mRev);
-        pArr.push(mRev - mCost);
+        pArr.push(mRev - mPur - mWaste);
       });
     }
     if (chDaily) chDaily.destroy();
@@ -409,6 +455,44 @@
           </tr>`;
         }).join("")
       : `<tr><td colspan="7" class="empty">無資料</td></tr>`;
+
+    // ===== 損耗統計 =====
+    const wasteTotal = wastes.reduce((a,b) => a + (b.totalLoss || 0), 0);
+    document.getElementById("vWasteTotal").textContent = fmt.money(Math.round(wasteTotal));
+    document.getElementById("vWasteCnt").textContent = `${wastes.length} 單`;
+    document.getElementById("vWastePct").textContent = rev > 0 ? (wasteTotal / rev * 100).toFixed(1) + "%" : "—";
+
+    const wasteByItem = {};
+    wastes.forEach(w => (w.lines||[]).forEach(l => {
+      const k = l.itemId || `__name__${l.name||"未知"}`;
+      if (!wasteByItem[k]) wasteByItem[k] = { name: itemMap[l.itemId]?.name || l.name || "(已刪除)", qty: 0, loss: 0, unit: l.unit||"" };
+      wasteByItem[k].qty  += Number(l.qty) || 0;
+      wasteByItem[k].loss += Number(l.lineLoss) || 0;
+    }));
+    const wasteItemsArr = Object.values(wasteByItem).sort((a,b) => b.loss - a.loss).slice(0, 5);
+    document.getElementById("wasteByItem").innerHTML = wasteItemsArr.length
+      ? wasteItemsArr.map(w => `<tr>
+          <td>${w.name}</td>
+          <td class="num">${fmt.num(w.qty)} ${w.unit}</td>
+          <td class="num" style="color:var(--tomato)">${fmt.money(Math.round(w.loss))}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="3" class="empty">無損耗記錄</td></tr>`;
+
+    const wasteByReason = {};
+    wastes.forEach(w => {
+      const r = w.reason || "未分類";
+      if (!wasteByReason[r]) wasteByReason[r] = { count: 0, loss: 0 };
+      wasteByReason[r].count += 1;
+      wasteByReason[r].loss  += Number(w.totalLoss) || 0;
+    });
+    const reasonArr = Object.entries(wasteByReason).sort((a,b) => b[1].loss - a[1].loss);
+    document.getElementById("wasteByReason").innerHTML = reasonArr.length
+      ? reasonArr.map(([r, v]) => `<tr>
+          <td>${r}</td>
+          <td class="num">${v.count}</td>
+          <td class="num" style="color:var(--tomato)">${fmt.money(Math.round(v.loss))}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="3" class="empty">無損耗記錄</td></tr>`;
 
     // By 經辦人（COGS 視角不變）
     const userAgg = {};

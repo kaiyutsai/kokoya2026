@@ -378,6 +378,7 @@
         <td>${p.handlerName || p.createdByName || "—"}</td>
         <td class="right flex" style="justify-content:flex-end;gap:4px">
           <button class="btn ghost icon-only" data-edit="${p.id}" title="編輯改單">✎</button>
+          <button class="btn ghost icon-only" data-print="${p.id}" title="列印進貨單">🖨</button>
           ${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${p.id}" title="刪除（會反扣庫存）">🗑</button>` : ""}
         </td>
       </tr>`).join("");
@@ -386,10 +387,16 @@
   $rows.addEventListener("click", async e => {
     const editId = e.target.closest("[data-edit]")?.dataset.edit;
     const delId  = e.target.closest("[data-del]")?.dataset.del;
+    const printId = e.target.closest("[data-print]")?.dataset.print;
     if (editId) {
       const p = cache.find(x => x.id === editId);
       if (p) enterEditMode(p);
       else toast("找不到該筆進貨單", "err");
+      return;
+    }
+    if (printId) {
+      const p = cache.find(x => x.id === printId);
+      if (p) printPurchase(p);
       return;
     }
     if (delId && confirm("刪除這筆進貨單？庫存會自動扣除。")) {
@@ -402,6 +409,85 @@
       } catch (err) { toast(err.message, "err"); }
     }
   });
+
+  // ----- 列印進貨單（開新分頁，A5 直印） -----
+  function printPurchase(p) {
+    const w = window.open("", "_blank", "width=720,height=900");
+    if (!w) return toast("瀏覽器擋了彈出視窗", "err");
+    const linesHtml = (p.lines || []).map((l, i) => {
+      const isBox = l.mode === "box" && l.packSize;
+      const detail = isBox
+        ? `${l.packQty}箱 × ${l.packSize}${l.unit||""} = ${fmt.num(l.qty)}${l.unit||""}`
+        : `${fmt.num(l.qty)} ${l.unit||""}`;
+      const unitCost = l.qty > 0 ? (Number(l.lineTotal||0) / Number(l.qty)).toFixed(2) : "—";
+      return `<tr>
+        <td>${i+1}</td>
+        <td>${l.name||""}</td>
+        <td>${detail}</td>
+        <td class="num">${l.mode==="box"?fmt.money(l.packCost||0)+"/箱":"$"+unitCost+"/"+(l.unit||"")}</td>
+        <td class="num">${fmt.money(Number(l.lineTotal)||0)}</td>
+      </tr>`;
+    }).join("");
+    const dateStr = fmt.date(p.date);
+    const docNo = `P-${dateStr.replace(/-/g,"")}-${p.id.slice(0,4).toUpperCase()}`;
+    w.document.write(`<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><title>進貨單 ${docNo}</title>
+<style>
+  @page { size: A5; margin: 8mm; }
+  body { font-family: "Microsoft JhengHei","PingFang TC",sans-serif; color: #4A3325; margin: 0; padding: 18px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 12px; border-bottom: 2px solid #4A3325; margin-bottom: 14px; }
+  .title { font-size: 20pt; font-weight: 700; letter-spacing: .2em; }
+  .sub { font-size: 9pt; color: #8B7355; letter-spacing: .15em; }
+  .meta { font-size: 9pt; text-align: right; line-height: 1.6; }
+  .info { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 10pt; margin-bottom: 14px; }
+  .info .lbl { color: #8B7355; font-size: 9pt; }
+  .info .val { font-weight: 600; border-bottom: 1px dashed #DDD; padding: 2px 0 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10pt; }
+  th, td { border: 1px solid #999; padding: 6px 8px; }
+  th { background: #F5EFE0; font-weight: 700; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals { text-align: right; margin-top: 10px; }
+  .totals .grand { font-size: 14pt; font-weight: 700; color: #C97B63; padding-top: 8px; border-top: 2px solid #4A3325; }
+  .signs { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; font-size: 9pt; }
+  .signs .sig { border-top: 1px solid #999; padding-top: 4px; text-align: center; color: #8B7355; }
+  .note-block { margin-top: 12px; padding: 8px 12px; background: #FFF6E6; border-left: 3px solid #DD8E5C; font-size: 9pt; }
+  @media print { body { padding: 0; } .no-print { display: none !important; } }
+</style></head><body>
+  <div class="no-print" style="text-align:right;margin-bottom:10px">
+    <button onclick="window.print()" style="padding:6px 14px;font-size:13px;background:#DD8E5C;color:#fff;border:0;border-radius:6px;cursor:pointer">🖨 列印</button>
+    <button onclick="window.close()" style="padding:6px 14px;font-size:13px;border:1px solid #ccc;background:#fff;border-radius:6px;cursor:pointer">關閉</button>
+  </div>
+  <div class="head">
+    <div>
+      <div class="title">進 貨 單</div>
+      <div class="sub">PURCHASE NOTE</div>
+    </div>
+    <div class="meta">
+      <div><b>${docNo}</b></div>
+      <div>果果家 KOKOYA</div>
+    </div>
+  </div>
+  <div class="info">
+    <div><div class="lbl">進貨日期</div><div class="val">${dateStr}</div></div>
+    <div><div class="lbl">經辦人</div><div class="val">${p.handlerName || p.createdByName || "—"}</div></div>
+    <div style="grid-column:1/-1"><div class="lbl">供應商</div><div class="val">${p.supplier || "—"}</div></div>
+  </div>
+  <table>
+    <thead><tr><th style="width:30px">#</th><th>品項</th><th>數量明細</th><th class="num">單價</th><th class="num">小計</th></tr></thead>
+    <tbody>${linesHtml}</tbody>
+  </table>
+  <div class="totals">
+    <div>合計品項：${(p.lines||[]).length} 項</div>
+    <div class="grand">總計　${fmt.money(p.total)}</div>
+  </div>
+  ${p.note ? `<div class="note-block">備註：${p.note}</div>` : ""}
+  <div class="signs">
+    <div class="sig">經辦簽收</div>
+    <div class="sig">主管覆核</div>
+  </div>
+</body></html>`);
+    w.document.close();
+  }
 
   // 操作說明 modal
   const $helpModal = document.getElementById("helpModal");

@@ -12,6 +12,7 @@ const NAV = [
   { href: "sales.html",      label: "銷貨",     icon: "🛒", key: "sales" },
   { href: "purchase.html",   label: "進貨",     icon: "📦", key: "purchase" },
   { href: "waste.html",      label: "損耗單",   icon: "🗑", key: "waste" },
+  { href: "stocktake.html",  label: "庫存盤點", icon: "📋", key: "stocktake" },
   { href: "items.html",      label: "品項清單", icon: "🍎", key: "items" },
   { href: "shipping.html",   label: "出貨單",   icon: "🚚", key: "shipping" },
   { href: "reports.html",    label: "報表",     icon: "📊", key: "reports" },
@@ -41,10 +42,240 @@ export function mountShell({ active = "" } = {}) {
       renderTopbar(user, profile, active);
       bindLogout();
       watchNewWebOrders();
+      installQuickSearch();
       window.__currentUser = { uid: user.uid, email: user.email, ...profile };
       resolve(window.__currentUser);
     });
   });
+}
+
+// ============= 全站快速搜尋 (Ctrl/Cmd + K) =============
+let _qsCache = null;   // { items, sales, shipments, customers, webOrders }
+async function _loadQsCache() {
+  if (_qsCache) return _qsCache;
+  // 動態 import data.js 避免循環
+  const data = await import("./data.js");
+  const [items, sales, shipments, customers, webOrders] = await Promise.all([
+    data.listItems().catch(() => []),
+    data.listSales({ days: 90 }).catch(() => []),
+    data.listShipments({ days: 90 }).catch(() => []),
+    data.listCustomers().catch(() => []),
+    data.listWebOrders().catch(() => [])
+  ]);
+  _qsCache = { items, sales, shipments, customers, webOrders };
+  return _qsCache;
+}
+
+function installQuickSearch() {
+  // 建一次就好
+  if (document.getElementById("qsModal")) return;
+
+  const style = document.createElement("style");
+  style.textContent = `
+    #qsModal { position: fixed; inset: 0; background: rgba(74,51,37,.5); z-index: 1000; display: none; padding-top: 80px; }
+    #qsModal.show { display: block; }
+    #qsModal .qs-box { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.3); overflow: hidden; }
+    #qsModal .qs-input { width: 100%; padding: 18px 22px; font-size: 1.1rem; border: 0; border-bottom: 1px solid #E0CDAA; background: #FFFCF4; outline: none; font-family: inherit; }
+    #qsModal .qs-results { max-height: 60vh; overflow-y: auto; }
+    #qsModal .qs-empty { padding: 50px 20px; text-align: center; color: #B8A689; }
+    #qsModal .qs-group { padding: 8px 22px 4px; font-size: .76rem; color: #8B7355; letter-spacing: .15em; background: #F5EFE0; }
+    #qsModal .qs-item { display: flex; gap: 12px; align-items: center; padding: 10px 22px; border-bottom: 1px dashed #E0CDAA; cursor: pointer; text-decoration: none; color: inherit; }
+    #qsModal .qs-item:hover, #qsModal .qs-item.active { background: #FFF6E6; }
+    #qsModal .qs-item .icon { font-size: 1.4rem; flex-shrink: 0; }
+    #qsModal .qs-item .meta { flex: 1; min-width: 0; }
+    #qsModal .qs-item .ttl { font-weight: 600; color: #4A3325; }
+    #qsModal .qs-item .sub { font-size: .82rem; color: #8B7355; }
+    #qsModal .qs-foot { padding: 10px 22px; font-size: .76rem; color: #8B7355; background: #F5EFE0; display: flex; justify-content: space-between; }
+    #qsModal kbd { background: #fff; border: 1px solid #E0CDAA; padding: 1px 6px; border-radius: 4px; font-family: inherit; font-size: .9em; }
+  `;
+  document.head.appendChild(style);
+
+  const modal = document.createElement("div");
+  modal.id = "qsModal";
+  modal.innerHTML = `
+    <div class="qs-box">
+      <input class="qs-input" id="qsInput" placeholder="🔍 搜尋品項 / 客人 / 銷貨單號 / 出貨單號..." autocomplete="off">
+      <div class="qs-results" id="qsResults">
+        <div class="qs-empty">輸入關鍵字開始搜尋…<br><span style="font-size:.84rem">支援：品項、客人、單號、Email、電話</span></div>
+      </div>
+      <div class="qs-foot">
+        <span><kbd>Esc</kbd> 關閉　<kbd>↑</kbd>/<kbd>↓</kbd> 移動　<kbd>Enter</kbd> 開啟</span>
+        <span>Ctrl+K 隨時呼叫</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const $modal   = modal;
+  const $input   = document.getElementById("qsInput");
+  const $results = document.getElementById("qsResults");
+  let curIdx = 0;
+  let resultLinks = [];
+
+  const open = async () => {
+    $modal.classList.add("show");
+    $input.value = "";
+    $input.focus();
+    $results.innerHTML = `<div class="qs-empty">⏳ 載入索引中…</div>`;
+    await _loadQsCache();
+    $results.innerHTML = `<div class="qs-empty">輸入關鍵字開始搜尋…<br><span style="font-size:.84rem">支援：品項、客人、單號、Email、電話</span></div>`;
+  };
+  const close = () => $modal.classList.remove("show");
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      if ($modal.classList.contains("show")) close(); else open();
+    } else if (e.key === "Escape" && $modal.classList.contains("show")) {
+      close();
+    } else if ($modal.classList.contains("show")) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (resultLinks.length) {
+          curIdx = (curIdx + 1) % resultLinks.length;
+          updateActive();
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (resultLinks.length) {
+          curIdx = (curIdx - 1 + resultLinks.length) % resultLinks.length;
+          updateActive();
+        }
+      } else if (e.key === "Enter") {
+        if (resultLinks[curIdx]) {
+          e.preventDefault();
+          location.href = resultLinks[curIdx].href;
+        }
+      }
+    }
+  });
+  $modal.addEventListener("click", e => { if (e.target === $modal) close(); });
+
+  $input.addEventListener("input", () => {
+    const kw = $input.value.trim().toLowerCase();
+    if (!kw || !_qsCache) {
+      $results.innerHTML = `<div class="qs-empty">輸入關鍵字開始搜尋…</div>`;
+      resultLinks = [];
+      return;
+    }
+    const hits = { items: [], customers: [], sales: [], shipments: [], webOrders: [] };
+    _qsCache.items.forEach(i => {
+      if ((i.name||"").toLowerCase().includes(kw)) hits.items.push(i);
+    });
+    _qsCache.customers.forEach(c => {
+      if ((c.name||"").toLowerCase().includes(kw) ||
+          (c.displayName||"").toLowerCase().includes(kw) ||
+          (c.email||"").toLowerCase().includes(kw) ||
+          (c.phone||"").includes(kw)) hits.customers.push(c);
+    });
+    _qsCache.sales.forEach(s => {
+      const idShort = s.id.slice(0,6).toLowerCase();
+      if ((s.customer||"").toLowerCase().includes(kw) ||
+          idShort.includes(kw) ||
+          (s.lines||[]).some(l => (l.name||"").toLowerCase().includes(kw))) hits.sales.push(s);
+    });
+    _qsCache.shipments.forEach(s => {
+      if ((s.recipient||"").toLowerCase().includes(kw) ||
+          (s.docNo||"").toLowerCase().includes(kw)) hits.shipments.push(s);
+    });
+    _qsCache.webOrders.forEach(o => {
+      const idShort = o.id.slice(0,6).toLowerCase();
+      if ((o.customer||"").toLowerCase().includes(kw) ||
+          (o.phone||"").includes(kw) ||
+          idShort.includes(kw)) hits.webOrders.push(o);
+    });
+
+    const totalCount = Object.values(hits).reduce((a,arr) => a + arr.length, 0);
+    if (!totalCount) {
+      $results.innerHTML = `<div class="qs-empty">沒有找到「${kw}」相關結果</div>`;
+      resultLinks = [];
+      return;
+    }
+
+    let html = "";
+    resultLinks = [];
+    if (hits.items.length) {
+      html += `<div class="qs-group">🍎 品項（${hits.items.length}）</div>`;
+      hits.items.slice(0,5).forEach(i => {
+        const href = `items.html`;
+        resultLinks.push({ href });
+        html += `<a class="qs-item" href="${href}">
+          <span class="icon">🍎</span>
+          <div class="meta">
+            <div class="ttl">${i.name}${i.category?` <span style="font-size:.78rem;color:#8B7355">· ${i.category}</span>`:""}</div>
+            <div class="sub">庫存 ${i.stock||0} ${i.unit||""}　售價 ${i.price?"$"+i.price:"未定"}</div>
+          </div>
+        </a>`;
+      });
+    }
+    if (hits.customers.length) {
+      html += `<div class="qs-group">👥 會員（${hits.customers.length}）</div>`;
+      hits.customers.slice(0,5).forEach(c => {
+        const href = `customer-detail.html?uid=${encodeURIComponent(c.uid)}`;
+        resultLinks.push({ href });
+        const name = c.name || c.displayName || c.email?.split("@")[0] || "(未命名)";
+        html += `<a class="qs-item" href="${href}">
+          <span class="icon">👤</span>
+          <div class="meta">
+            <div class="ttl">${name}</div>
+            <div class="sub">${c.email||""}${c.phone?` · ${c.phone}`:""}</div>
+          </div>
+        </a>`;
+      });
+    }
+    if (hits.sales.length) {
+      html += `<div class="qs-group">🛒 銷貨單（${hits.sales.length}）</div>`;
+      hits.sales.slice(0,5).forEach(s => {
+        const href = `sales.html`;
+        resultLinks.push({ href });
+        const dt = s.date?.toDate ? s.date.toDate() : new Date(s.date);
+        html += `<a class="qs-item" href="${href}">
+          <span class="icon">🛒</span>
+          <div class="meta">
+            <div class="ttl">${s.customer||"—"} <span style="color:#8B7355;font-size:.78rem">#${s.id.slice(0,6)}</span></div>
+            <div class="sub">${dt.toLocaleDateString()} · $${(s.total||0).toLocaleString()}</div>
+          </div>
+        </a>`;
+      });
+    }
+    if (hits.shipments.length) {
+      html += `<div class="qs-group">🚚 出貨單（${hits.shipments.length}）</div>`;
+      hits.shipments.slice(0,5).forEach(s => {
+        const href = `shipping.html`;
+        resultLinks.push({ href });
+        html += `<a class="qs-item" href="${href}">
+          <span class="icon">🚚</span>
+          <div class="meta">
+            <div class="ttl">${s.recipient||"—"} <span style="color:#8B7355;font-size:.78rem">${s.docNo||""}</span></div>
+            <div class="sub">$${(s.total||0).toLocaleString()}</div>
+          </div>
+        </a>`;
+      });
+    }
+    if (hits.webOrders.length) {
+      html += `<div class="qs-group">📨 網站訂單（${hits.webOrders.length}）</div>`;
+      hits.webOrders.slice(0,5).forEach(o => {
+        const href = `web-orders.html`;
+        resultLinks.push({ href });
+        html += `<a class="qs-item" href="${href}">
+          <span class="icon">📨</span>
+          <div class="meta">
+            <div class="ttl">${o.customer||"—"} <span style="color:#8B7355;font-size:.78rem">#${o.id.slice(0,6)}</span></div>
+            <div class="sub">${o.phone||""} · $${(o.total||0).toLocaleString()}</div>
+          </div>
+        </a>`;
+      });
+    }
+    $results.innerHTML = html;
+    curIdx = 0;
+    updateActive();
+  });
+
+  function updateActive() {
+    $results.querySelectorAll(".qs-item").forEach((el, i) => {
+      el.classList.toggle("active", i === curIdx);
+    });
+  }
 }
 
 // 監聽新網站訂單，更新 nav 紅徽章 + 跳出通知

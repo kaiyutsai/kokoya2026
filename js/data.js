@@ -265,12 +265,14 @@ export async function addPurchase(p) {
   });
 }
 export async function listPurchases({ days = 30 } = {}){
-  const since = new Date(); since.setDate(since.getDate() - days);
-  const snap = await getDocs(query(
-    collection(db, "purchases"),
-    where("date", ">=", Timestamp.fromDate(since)),
-    orderBy("date", "desc")
-  ));
+  // days = null / 0 → 撈全部歷史
+  const constraints = [orderBy("date", "desc")];
+  if (days != null && days > 0) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    constraints.unshift(where("date", ">=", Timestamp.fromDate(since)));
+  }
+  const snap = await getDocs(query(collection(db, "purchases"), ...constraints));
   return snap.docs.map(d=>({ id:d.id, ...d.data() }));
 }
 export async function deletePurchase(id) {
@@ -654,6 +656,61 @@ export async function upsertArticle(id, data) {
 
 export async function deleteArticle(id) {
   await deleteDoc(doc(db, "articles", id));
+}
+
+// ============ Stocktake (庫存盤點) ============
+// 實際盤點數量 vs 系統庫存 → 寫入差異紀錄 + 更新 item.stock 為實際數量
+export async function addStocktake(s) {
+  return await runTransaction(db, async (tx) => {
+    const lines = s.lines || [];
+    const itemRefs = lines.map(l => doc(db, "items", l.itemId));
+    const itemSnaps = await Promise.all(itemRefs.map(r => tx.get(r)));
+
+    let totalDiffLoss = 0;
+    let totalDiffGain = 0;
+    const enriched = lines.map((l, i) => {
+      const sp = itemSnaps[i];
+      const avgCost  = sp.exists() ? Number(sp.data().avgCost) || 0 : 0;
+      const oldStock = sp.exists() ? Number(sp.data().stock)   || 0 : 0;
+      const newStock = Number(l.newStock) || 0;
+      const diff = newStock - oldStock;
+      const diffValue = diff * avgCost;
+      if (diff < 0) totalDiffLoss += -diffValue;
+      else if (diff > 0) totalDiffGain += diffValue;
+      return { itemId: l.itemId, name: l.name, unit: l.unit, oldStock, newStock, diff, unitCost: avgCost, diffValue };
+    });
+
+    const ref = doc(collection(db, "stocktakes"));
+    tx.set(ref, {
+      date: s.date instanceof Date ? Timestamp.fromDate(s.date) : s.date,
+      note: s.note || "",
+      lines: enriched,
+      totalDiffLoss,
+      totalDiffGain,
+      handlerName: s.handlerName || me().name,
+      createdAt: serverTimestamp(),
+      createdBy: me().email,
+      createdByName: me().name
+    });
+
+    // 更新每筆 item.stock 為實際數量
+    itemSnaps.forEach((sp, i) => {
+      if (sp.exists() && lines[i].newStock != null) {
+        tx.update(itemRefs[i], { stock: Number(lines[i].newStock) });
+      }
+    });
+    return ref.id;
+  });
+}
+
+export async function listStocktakes({ days = 90 } = {}) {
+  const constraints = [orderBy("date", "desc")];
+  if (days != null && days > 0) {
+    const since = new Date(); since.setDate(since.getDate() - days);
+    constraints.unshift(where("date", ">=", Timestamp.fromDate(since)));
+  }
+  const snap = await getDocs(query(collection(db, "stocktakes"), ...constraints));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 // ============ Customers (購物網會員) ============
