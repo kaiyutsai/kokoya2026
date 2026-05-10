@@ -334,7 +334,6 @@
     document.getElementById("fDesc").value    = item?.desc || "";
     // visible 欄位：新增時預設 true；編輯時用既有值（未設定的舊資料也視為 true）
     document.getElementById("fVisible").checked = item ? (item.visible !== false) : true;
-    updateImgPreview();
 
     syncUnitDisplay();
 
