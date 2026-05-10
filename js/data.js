@@ -656,6 +656,82 @@ export async function deleteArticle(id) {
   await deleteDoc(doc(db, "articles", id));
 }
 
+// ============ Customers (購物網會員) ============
+export async function listCustomers() {
+  const snap = await getDocs(collection(db, "customers"));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// ============ Wastes (損耗單) ============
+// 因壞掉、試吃、變質等原因消耗庫存
+export async function addWaste(w) {
+  return await runTransaction(db, async (tx) => {
+    const lines = w.lines || [];
+    const itemRefs = lines.map(l => doc(db, "items", l.itemId));
+    const itemSnaps = await Promise.all(itemRefs.map(r => tx.get(r)));
+
+    let totalLoss = 0;
+    const enriched = lines.map((l, i) => {
+      const sp = itemSnaps[i];
+      const avgCost = sp.exists() ? Number(sp.data().avgCost) || 0 : 0;
+      const lineLoss = Number(l.qty) * avgCost;
+      totalLoss += lineLoss;
+      return { ...l, lineLoss, unitCost: avgCost };
+    });
+
+    const ref = doc(collection(db, "wastes"));
+    tx.set(ref, {
+      date: w.date instanceof Date ? Timestamp.fromDate(w.date) : w.date,
+      reason: w.reason || "",
+      note: w.note || "",
+      lines: enriched,
+      totalLoss,
+      handlerName: w.handlerName || me().name,
+      createdAt: serverTimestamp(),
+      createdBy: me().email,
+      createdByName: me().name
+    });
+
+    // 扣庫存
+    itemSnaps.forEach((sp, i) => {
+      if (sp.exists()) {
+        const cur = sp.data();
+        tx.update(itemRefs[i], { stock: (Number(cur.stock)||0) - Number(lines[i].qty) });
+      }
+    });
+    return ref.id;
+  });
+}
+
+export async function listWastes({ days = 90 } = {}) {
+  const constraints = [orderBy("date", "desc")];
+  if (days != null && days > 0) {
+    const since = new Date(); since.setDate(since.getDate() - days);
+    constraints.unshift(where("date", ">=", Timestamp.fromDate(since)));
+  }
+  const snap = await getDocs(query(collection(db, "wastes"), ...constraints));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function deleteWaste(id) {
+  // 反扣庫存
+  await runTransaction(db, async (tx) => {
+    const wRef = doc(db, "wastes", id);
+    const wSnap = await tx.get(wRef);
+    if (!wSnap.exists()) throw new Error("找不到損耗單");
+    const lines = wSnap.data().lines || [];
+    const itemRefs = lines.map(l => doc(db, "items", l.itemId));
+    const itemSnaps = await Promise.all(itemRefs.map(r => tx.get(r)));
+    itemSnaps.forEach((sp, i) => {
+      if (sp.exists()) {
+        const cur = sp.data();
+        tx.update(itemRefs[i], { stock: (Number(cur.stock)||0) + Number(lines[i].qty) });
+      }
+    });
+    tx.delete(wRef);
+  });
+}
+
 // ============ Web Orders (購物網訂單) ============
 // 訪客從前端購物網送來的訂單，員工要確認 → 一鍵轉成 sale + shipment
 export async function listWebOrders({ status = null } = {}) {
@@ -741,18 +817,20 @@ const LOOKUPS_REF = () => doc(db, "settings", "lookups");
 const DEFAULT_LOOKUPS = {
   suppliers: [],
   deliveryStaff: [],
-  handlers: ["凱宇", "凱帆", "妍慧", "于真"]
+  handlers: ["凱宇", "凱帆", "妍慧", "于真"],
+  // 水果大項分類（後台 admin 可在「設定」增減）
+  categories: ["蘋果類","柑橘類","梨類","瓜類","莓果類","熱帶水果","葡萄類","奇異果類","其他"]
 };
 
 export async function getLookups() {
   const s = await getDoc(LOOKUPS_REF());
   if (!s.exists()) return { ...DEFAULT_LOOKUPS };
   const data = s.data();
-  // 個別欄位若沒設或空 → fallback 到預設
   return {
     suppliers:     Array.isArray(data.suppliers)     ? data.suppliers     : DEFAULT_LOOKUPS.suppliers,
     deliveryStaff: Array.isArray(data.deliveryStaff) ? data.deliveryStaff : DEFAULT_LOOKUPS.deliveryStaff,
-    handlers:      (Array.isArray(data.handlers) && data.handlers.length) ? data.handlers : DEFAULT_LOOKUPS.handlers
+    handlers:      (Array.isArray(data.handlers) && data.handlers.length) ? data.handlers : DEFAULT_LOOKUPS.handlers,
+    categories:    (Array.isArray(data.categories) && data.categories.length) ? data.categories : DEFAULT_LOOKUPS.categories
   };
 }
 
@@ -761,6 +839,7 @@ export async function saveLookups(data) {
     suppliers:     Array.isArray(data.suppliers)     ? data.suppliers     : [],
     deliveryStaff: Array.isArray(data.deliveryStaff) ? data.deliveryStaff : [],
     handlers:      Array.isArray(data.handlers)      ? data.handlers      : [],
+    categories:    Array.isArray(data.categories)    ? data.categories    : [],
     updatedAt: serverTimestamp(),
     updatedBy: me().email
   }, { merge: true });

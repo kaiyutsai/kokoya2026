@@ -98,13 +98,14 @@
         </div>
         <div class="field"><label>備用單位（如「箱」）</label><input class="input" id="fBoxUnit" placeholder="箱" value="箱"></div>
       </div>
-      <div class="field"><label>分類</label>
+      <div class="field"><label>分類（大項）</label>
         <select class="select" id="fCat">
           <option value="">未分類</option>
-          <option>蘋果類</option><option>柑橘類</option><option>梨類</option>
-          <option>瓜類</option><option>莓果類</option><option>熱帶水果</option>
-          <option>葡萄類</option><option>奇異果類</option><option>其他</option>
+          <!-- JS 動態填入：從設定撈 lookups.categories -->
         </select>
+        <div class="muted" style="font-size:.78rem;margin-top:4px">
+          沒看到要的分類？到「⚙️ 設定」→「🍎 水果大項分類」新增
+        </div>
       </div>
 
       <div class="field" style="background:#FFF6E6;padding:14px 16px;border-radius:var(--r-md);border:1px dashed var(--orange)">
@@ -155,7 +156,7 @@
 
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
-  import { listItems, upsertItem, deleteItem } from "./js/data.js";
+  import { listItems, upsertItem, deleteItem, getLookups } from "./js/data.js";
 
   const me = await mountShell({ active: "items" });
   const $rows  = document.getElementById("rows");
@@ -167,6 +168,12 @@
   const $hUnit  = document.getElementById("hUnit");
 
   let cache = [];
+
+  // 從設定撈分類，填入下拉
+  const lookups = await getLookups().catch(() => ({ categories: [] }));
+  const $fCat = document.getElementById("fCat");
+  $fCat.innerHTML = `<option value="">未分類</option>` +
+    (lookups.categories || []).map(c => `<option value="${c}">${c}</option>`).join("");
 
   // ============ 列表 ============
   function render() {

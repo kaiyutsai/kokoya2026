@@ -56,13 +56,26 @@
 
   <section class="card" style="margin-top:18px">
     <div class="card-h">
+      <h3>📦 分類銷售統計</h3>
+      <span class="muted" style="font-size:.82rem">按水果大項分類匯總（蘋果類/柑橘類/...）</span>
+    </div>
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>分類</th><th class="num">品項數</th><th class="num">售出量</th><th class="num">營收</th><th class="num">售出成本</th><th class="num">利潤</th><th class="num">利潤率</th></tr></thead>
+        <tbody id="catRank"><tr><td colspan="7" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <div class="card-h">
       <h3>熱賣品項排行</h3>
-      <span class="muted" style="font-size:.82rem">利潤 = 期間銷貨營收 − 期間進貨成本（現金流視角）· 點 ▸ 展開看售出方式</span>
+      <span class="muted" style="font-size:.82rem">售出成本=賣出量×平均成本（COGS） · 進貨成本=期間進貨花費 · 利潤用 COGS 算 · 點 ▸ 展開看售出方式</span>
     </div>
     <div class="table-wrap">
       <table class="tb" id="rankTable">
-        <thead><tr><th style="width:34px"></th><th>排名</th><th>品項</th><th class="num">售出量</th><th class="num">營收</th><th class="num">進貨成本</th><th class="num">利潤</th><th class="num">利潤率</th></tr></thead>
-        <tbody id="rank"><tr><td colspan="8" class="empty">載入中…</td></tr></tbody>
+        <thead><tr><th style="width:34px"></th><th>排名</th><th>品項</th><th class="num">售出量</th><th class="num">營收</th><th class="num">售出成本</th><th class="num">進貨成本</th><th class="num">利潤</th><th class="num">利潤率</th></tr></thead>
+        <tbody id="rank"><tr><td colspan="9" class="empty">載入中…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -296,12 +309,14 @@
           name: displayName,
           qty: 0,
           rev: 0,
-          cost: purchaseCostByItem[l.itemId] || 0,   // 用進貨成本總和
-          tiers: {}                                  // 售出方式明細
+          cogsCost: 0,                                   // 售出成本（賣出 × 平均成本）
+          purchaseCost: purchaseCostByItem[l.itemId] || 0,  // 期間進貨成本
+          tiers: {}
         };
       }
       itemAgg[k].qty += Number(l.qty) || 0;
       itemAgg[k].rev += Number(l.lineTotal || (Number(l.qty)*Number(l.price))) || 0;
+      itemAgg[k].cogsCost += computeLineCost(l, itemMap);    // ✨ 累加 COGS
       // 偵測 tier
       const item = itemMap[l.itemId];
       const tier = detectTier(l, item);
@@ -327,7 +342,8 @@
 
     document.getElementById("rank").innerHTML = sorted.length
       ? sorted.slice(0,12).map((v, i) => {
-          const p = v.rev - v.cost;
+          // 用 COGS 算利潤（per-item 較準）
+          const p = v.rev - v.cogsCost;
           const m = v.rev>0 ? (p/v.rev*100).toFixed(1)+"%" : "—";
           const tierEntries = Object.values(v.tiers).sort((a,b) => b.rev - a.rev);
           const tierRows = tierEntries.map(t =>
@@ -336,7 +352,7 @@
                <td style="padding-left:24px;color:var(--ink-3);font-size:.88rem">└ ${t.label}（單價 ${fmt.money(Math.round(t.tierPrice))}）</td>
                <td class="num" style="font-size:.88rem;color:var(--ink-3)">${fmt.num(t.groups)} 組 / ${fmt.num(t.totalQty)} ${itemMap[v.itemId]?.unit||""}</td>
                <td class="num" style="font-size:.88rem;color:var(--ink-3)">${fmt.money(t.rev)}</td>
-               <td colspan="3"></td>
+               <td colspan="4"></td>
              </tr>`).join("");
           return `<tr class="rank-row" data-itemid="${v.itemId}" style="cursor:pointer">
             <td><span class="exp-arrow">▸</span></td>
@@ -344,12 +360,13 @@
             <td>${v.name}</td>
             <td class="num">${fmt.num(v.qty)}</td>
             <td class="num">${fmt.money(v.rev)}</td>
-            <td class="num">${fmt.money(Math.round(v.cost))}</td>
+            <td class="num">${fmt.money(Math.round(v.cogsCost))}</td>
+            <td class="num" style="color:var(--ink-3)">${fmt.money(Math.round(v.purchaseCost))}</td>
             <td class="num" style="color:${p>=0?'var(--leaf-deep)':'var(--tomato)'}">${fmt.money(Math.round(p))}</td>
             <td class="num">${m}</td>
           </tr>${tierRows}`;
         }).join("")
-      : `<tr><td colspan="8" class="empty">無資料</td></tr>`;
+      : `<tr><td colspan="9" class="empty">無資料</td></tr>`;
 
     // 預設：把 tier-detail 隱藏，點主列才展開
     document.querySelectorAll("#rank .tier-detail").forEach(tr => tr.style.display = "none");
@@ -365,6 +382,33 @@
         }
       });
     });
+
+    // ===== 分類銷售統計 =====
+    const catAgg = {};
+    sorted.forEach(v => {
+      const cat = (itemMap[v.itemId]?.category) || "未分類";
+      if (!catAgg[cat]) catAgg[cat] = { name: cat, itemCount: 0, qty: 0, rev: 0, cogsCost: 0, items: new Set() };
+      catAgg[cat].qty      += v.qty;
+      catAgg[cat].rev      += v.rev;
+      catAgg[cat].cogsCost += v.cogsCost;
+      catAgg[cat].items.add(v.itemId);
+    });
+    const catSorted = Object.values(catAgg).sort((a,b) => b.rev - a.rev);
+    document.getElementById("catRank").innerHTML = catSorted.length
+      ? catSorted.map(c => {
+          const profit = c.rev - c.cogsCost;
+          const margin = c.rev > 0 ? (profit/c.rev*100).toFixed(1)+"%" : "—";
+          return `<tr>
+            <td><b>📦 ${c.name}</b></td>
+            <td class="num">${c.items.size}</td>
+            <td class="num">${fmt.num(c.qty)}</td>
+            <td class="num">${fmt.money(c.rev)}</td>
+            <td class="num">${fmt.money(Math.round(c.cogsCost))}</td>
+            <td class="num" style="color:${profit>=0?'var(--leaf-deep)':'var(--tomato)'}">${fmt.money(Math.round(profit))}</td>
+            <td class="num">${margin}</td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="7" class="empty">無資料</td></tr>`;
 
     // By 經辦人（COGS 視角不變）
     const userAgg = {};

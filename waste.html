@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>損耗單 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="container">
+
+  <section class="card">
+    <div class="card-h">
+      <h2>📒 損耗單列表 <span class="muted" id="hCount" style="font-size:.84rem;font-weight:400"></span></h2>
+      <button class="btn primary" id="btnNewWaste">＋ 新增損耗單</button>
+    </div>
+    <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+      水果壞掉、變質、試吃、樣品贈送等情況都可以用「損耗單」記錄。<b>會自動扣庫存</b>，並計算損失成本（用平均成本算）。
+    </p>
+
+    <div class="flex" style="margin-bottom:12px;gap:8px;flex-wrap:wrap">
+      <select class="select" id="rangeFilter" style="width:140px">
+        <option value="30">近 30 天</option>
+        <option value="90" selected>近 90 天</option>
+        <option value="180">近 6 個月</option>
+        <option value="all">全部歷史</option>
+      </select>
+      <input class="input" id="kw" placeholder="🔍 搜尋品項/原因" style="width:220px">
+      <span class="muted" style="margin-left:auto;align-self:center" id="totalLabel">期間損失 $0</span>
+    </div>
+
+    <div class="table-wrap">
+      <table class="tb">
+        <thead><tr><th>日期</th><th>品項明細</th><th>原因</th><th class="num">損失金額</th><th>經辦</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="6" class="empty">載入中…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 表單（預設隱藏） -->
+  <section class="card hidden" id="formSection" style="margin-top:18px">
+    <div class="card-h">
+      <h2>📝 開立損耗單</h2>
+      <button type="button" class="btn ghost" id="btnCloseForm">✕ 關閉</button>
+    </div>
+    <form id="form" novalidate>
+      <div class="row-fields">
+        <div class="field"><label>日期</label><input type="date" class="input" id="fDate" required></div>
+        <div class="field"><label>原因</label>
+          <select class="select" id="fReason">
+            <option>壞掉/腐爛</option>
+            <option>過期</option>
+            <option>瑕疵/賣相不佳</option>
+            <option>試吃</option>
+            <option>樣品贈送</option>
+            <option>其他</option>
+          </select>
+        </div>
+        <div class="field"><label>經辦人</label><select class="select" id="fHandler"></select></div>
+      </div>
+
+      <h3 style="margin-top:6px">品項明細</h3>
+      <div id="lines"></div>
+      <button type="button" class="btn ghost" id="btnAddLine">＋ 新增一行</button>
+
+      <div class="field" style="margin-top:14px"><label>備註</label><textarea class="textarea" id="fNote" placeholder="例：今天送貨摔傷一箱、客人退貨…"></textarea></div>
+
+      <div class="flex" style="justify-content:space-between;border-top:1px dashed var(--line);padding-top:14px;margin-top:8px">
+        <div class="muted">預估損失</div>
+        <div style="font-size:1.4rem;font-weight:700;color:var(--tomato)" id="totalLoss">$0</div>
+      </div>
+
+      <div class="flex" style="justify-content:flex-end;margin-top:14px;gap:8px">
+        <button type="reset" class="btn ghost" id="btnReset">清空</button>
+        <button type="submit" class="btn tomato">💾 儲存損耗單（會扣庫存）</button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listItems, addWaste, listWastes, deleteWaste, getLookups } from "./js/data.js";
+
+  const me = await mountShell({ active: "waste" });
+  const $ = id => document.getElementById(id);
+  $("fDate").value = fmt.dateInput(new Date());
+
+  const lookups = await getLookups().catch(() => ({ handlers: ["凱宇","凱帆","妍慧","于真"] }));
+  $("fHandler").innerHTML = (lookups.handlers || []).map(n => `<option>${n}</option>`).join("");
+  $("fHandler").value = (lookups.handlers||[]).includes(me.name) ? me.name : (lookups.handlers||[])[0] || "";
+
+  let items = await listItems();
+  let cache = [];
+
+  const $lines = $("lines");
+  const $rows  = $("rows");
+  const $kw    = $("kw");
+  const $formSection = $("formSection");
+
+  function lineRow() {
+    const opts = items.map(i => `<option value="${i.id}" data-name="${i.name}" data-unit="${i.unit||''}" data-cost="${Math.round((i.avgCost||0)*100)/100}" data-stock="${i.stock||0}">${i.name}（庫存 ${i.stock||0}${i.unit||''}）</option>`).join("");
+    return `
+      <div class="row-fields line-row" style="margin-bottom:8px;align-items:end">
+        <div class="field" style="margin-bottom:0;grid-column:span 2"><label>品項</label>
+          <select class="select sl-item"><option value="">請選擇</option>${opts}</select>
+        </div>
+        <div class="field" style="margin-bottom:0"><label>數量 <span class="muted sl-unit"></span></label>
+          <input class="input sl-qty" type="number" min="1" step="1" value="1"></div>
+        <div class="field" style="margin-bottom:0"><label class="muted">單位成本</label>
+          <input class="input sl-cost" readonly tabindex="-1"></div>
+        <div class="field" style="margin-bottom:0"><label class="muted">小計損失</label>
+          <input class="input sl-sub" readonly tabindex="-1"></div>
+        <div><button type="button" class="btn ghost icon-only sl-del">✕</button></div>
+      </div>`;
+  }
+  function bindRow(row) {
+    const sl = row.querySelector(".sl-item");
+    sl.addEventListener("change", () => {
+      const o = sl.selectedOptions[0];
+      row.querySelector(".sl-unit").textContent = `(${o?.dataset.unit || ""})`;
+      row.querySelector(".sl-cost").value = o?.dataset.cost ? `$${o.dataset.cost}` : "";
+      recalc();
+    });
+    row.querySelector(".sl-qty").addEventListener("input", recalc);
+    row.querySelector(".sl-del").addEventListener("click", () => { row.remove(); recalc(); });
+  }
+  function recalc() {
+    let total = 0;
+    [...$lines.querySelectorAll(".line-row")].forEach(r => {
+      const o = r.querySelector(".sl-item").selectedOptions[0];
+      const cost = Number(o?.dataset.cost) || 0;
+      const qty  = Number(r.querySelector(".sl-qty").value) || 0;
+      const sub = qty * cost;
+      r.querySelector(".sl-sub").value = sub ? `$${sub.toLocaleString()}` : "";
+      total += sub;
+    });
+    $("totalLoss").textContent = fmt.money(total);
+  }
+  function addLine() {
+    $lines.insertAdjacentHTML("beforeend", lineRow());
+    bindRow($lines.lastElementChild);
+    recalc();
+  }
+  $("btnAddLine").addEventListener("click", addLine);
+  addLine();
+
+  // 表單顯示/隱藏
+  function showForm() {
+    $formSection.classList.remove("hidden");
+    setTimeout(() => $formSection.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
+  function hideForm() {
+    $formSection.classList.add("hidden");
+    $("form").reset();
+    $("fDate").value = fmt.dateInput(new Date());
+    $lines.innerHTML = ""; addLine();
+  }
+  $("btnNewWaste").addEventListener("click", showForm);
+  $("btnCloseForm").addEventListener("click", hideForm);
+  $("btnReset").addEventListener("click", () => {
+    setTimeout(() => { $("fDate").value = fmt.dateInput(new Date()); $lines.innerHTML = ""; addLine(); }, 10);
+  });
+
+  $("form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const lines = [...$lines.querySelectorAll(".line-row")].map(r => {
+      const sl = r.querySelector(".sl-item");
+      const opt = sl.selectedOptions[0];
+      return {
+        itemId: sl.value,
+        name: opt?.dataset.name || "",
+        unit: opt?.dataset.unit || "",
+        qty:  Number(r.querySelector(".sl-qty").value) || 0
+      };
+    }).filter(l => l.itemId && l.qty > 0);
+    if (!lines.length) return toast("請至少加一個品項", "err");
+
+    if (!confirm(`確定建立損耗單？\n會自動扣庫存，無法簡單復原（要刪損耗單庫存才會還回去）`)) return;
+
+    try {
+      await addWaste({
+        date: new Date($("fDate").value),
+        reason: $("fReason").value,
+        note: $("fNote").value,
+        handlerName: $("fHandler").value || me.name,
+        lines
+      });
+      toast("✓ 損耗單已儲存，庫存已扣除", "ok");
+      hideForm();
+      items = await listItems();
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast("儲存失敗：" + err.message, "err");
+    }
+  });
+
+  async function reload() {
+    cache = await listWastes({ days: null });
+    render();
+  }
+  function render() {
+    const range = $("rangeFilter").value;
+    const kw = $kw.value.trim();
+    let list = cache;
+    if (range !== "all") {
+      const since = new Date(); since.setDate(since.getDate() - Number(range));
+      list = list.filter(w => {
+        const d = w.date?.toDate ? w.date.toDate() : new Date(w.date);
+        return !isNaN(d) && d >= since;
+      });
+    }
+    if (kw) {
+      list = list.filter(w =>
+        (w.reason || "").includes(kw) ||
+        (w.lines || []).some(l => (l.name||"").includes(kw))
+      );
+    }
+    const totalLoss = list.reduce((a,b) => a + (b.totalLoss || 0), 0);
+    $("totalLabel").textContent = `期間損失 ${fmt.money(totalLoss)}（${list.length} 單）`;
+    $("hCount").textContent = `· 共 ${list.length} 單`;
+
+    if (!list.length) {
+      $rows.innerHTML = `<tr><td colspan="6" class="empty">尚無損耗紀錄</td></tr>`;
+      return;
+    }
+    $rows.innerHTML = list.map(w => `
+      <tr>
+        <td>${fmt.date(w.date)}</td>
+        <td>${(w.lines||[]).map(l=>`${l.name}×${l.qty}${l.unit||""}`).join("、")}</td>
+        <td>${w.reason || "—"}${w.note?`<br><span class="muted" style="font-size:.78rem">${w.note}</span>`:""}</td>
+        <td class="num"><b style="color:var(--tomato)">${fmt.money(Math.round(w.totalLoss||0))}</b></td>
+        <td>${w.handlerName || w.createdByName || "—"}</td>
+        <td class="right">
+          ${isAdmin(me.email) ? `<button class="btn ghost icon-only" data-del="${w.id}" title="刪除（會把庫存補回）">🗑</button>` : ""}
+        </td>
+      </tr>`).join("");
+  }
+  $("rangeFilter").addEventListener("change", render);
+  $kw.addEventListener("input", render);
+  $rows.addEventListener("click", async e => {
+    const id = e.target.closest("[data-del]")?.dataset.del;
+    if (id && confirm("刪除這筆損耗單？庫存會自動還回去。")) {
+      try {
+        await deleteWaste(id);
+        toast("已刪除", "ok");
+        items = await listItems();
+        reload();
+      } catch (err) { toast(err.message, "err"); }
+    }
+  });
+
+  reload();
+</script>
+</body>
+</html>

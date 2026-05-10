@@ -1,0 +1,126 @@
+// =====================================================
+// 果果家 KOKOYA · Firestore Security Rules
+// 把這份內容貼到 Firebase Console → Firestore → 規則
+// 凱宇登入後，把另外 3 位的 Gmail 加進 STAFF 即可
+// =====================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ----- 白名單 -----
+    function admins() {
+      return [
+        "kaiyu097@gmail.com"          // 凱宇 (管理員)
+      ];
+    }
+    function staff() {
+      return [
+        "kaiyu097@gmail.com",          // 凱宇 (管理員)
+        "caikaifan2017@gmail.com",     // 凱帆
+        "a0939023198@gmail.com",       // 妍慧
+        "linoreo52001@gmail.com"       // 于真
+      ];
+    }
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email in admins();
+    }
+    function isStaff() {
+      return request.auth != null && request.auth.token.email in staff();
+    }
+
+    // ----- 各 collection -----
+    match /items/{id} {
+      allow read:   if true;        // 公開讀（前端購物網要讀商品清單；avgCost 不會在前端 UI 顯示）
+      allow create: if isStaff();
+      allow update: if isStaff();   // 銷貨/進貨需要更新庫存欄位
+      allow delete: if isAdmin();
+    }
+
+    // 前端購物網訂單
+    // 訪客：可 create、用 ID get（給「我的訂單」用 localStorage 暫存的 ID 查單）
+    // 會員：list 時客戶端必須用 where("customerUid","==",auth.uid) 過濾，rules 會逐筆比對
+    // staff：全部可 list/update；admin 才能 delete
+    match /webOrders/{id} {
+      allow create: if true;
+      allow get:    if true;
+      allow list:   if isStaff() ||
+                       (request.auth != null &&
+                        resource.data.customerUid == request.auth.uid);
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // 會員個人資料：本人可讀寫自己的，staff 可讀全部
+    match /customers/{uid} {
+      allow read:   if isStaff() || (request.auth != null && request.auth.uid == uid);
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    match /sales/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();    // staff 可編輯改單；庫存交易層級用程式自動處理
+      allow delete: if isAdmin();
+    }
+
+    match /purchases/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /shipments/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // 損耗單（水果壞掉/變質/試吃）
+    match /wastes/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /batches/{id} {
+      allow read:   if isStaff();
+      allow create: if isStaff();
+      allow update: if isStaff();   // 員工可編輯批次內容、確認出貨
+      // 草稿任何 staff 可刪；已確認的只有 admin 可刪
+      allow delete: if isAdmin()
+                    || (isStaff() && resource.data.status == "draft");
+    }
+
+    // 共用設定：
+    //   - settings/payment：銀行帳號，購物網要顯示給訪客 → 公開讀
+    //   - settings/lookups, settings/secrets：staff 才能讀
+    //   - 所有 settings 的寫入只允許 admin
+    match /settings/payment {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+    match /settings/{key} {
+      allow read:  if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // 水果小教室文章：購物網要公開顯示 → 公開讀；只有 staff 能寫
+    match /articles/{id} {
+      allow read:   if true;
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // 其他預設拒絕
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

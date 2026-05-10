@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>會員清單 · 果果家 KOKOYA</title>
+<link rel="icon" href="assets/logo-fallback.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .cust-row { display: grid; grid-template-columns: 50px 1fr 130px 100px; gap: 14px; align-items: center; padding: 10px 14px; border-bottom: 1px dashed var(--line); }
+  .cust-row:hover { background: var(--paper-2); }
+  .cust-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); background: var(--paper-2); }
+  .cust-avatar.fallback { display: grid; place-items: center; font-size: 1.4rem; }
+  .cust-name { font-weight: 700; color: var(--ink-1); font-size: 1rem; }
+  .cust-email { font-size: .82rem; color: var(--ink-3); }
+  .cust-phone, .cust-addr { font-size: .82rem; color: var(--ink-2); margin-top: 2px; }
+  .cust-meta { font-size: .82rem; color: var(--muted); text-align: right; }
+  .cust-orders { text-align: right; }
+  .order-badge { background: var(--orange-l); color: var(--orange-deep); padding: 4px 12px; border-radius: var(--r-pill); font-weight: 700; font-size: .88rem; }
+</style>
+</head>
+<body>
+<main class="container">
+  <div class="card">
+    <div class="card-h">
+      <h2>👥 會員清單 <span class="muted" id="cntLabel" style="font-size:.84rem;font-weight:400"></span></h2>
+      <div class="flex" style="gap:8px">
+        <input class="input" id="kw" placeholder="🔍 搜尋姓名/Email/電話" style="width:240px">
+        <button class="btn ghost" id="btnExport">📥 匯出 CSV</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+      購物網用 Google 登入註冊的客人會出現在這裡。包含他們在「我的訂單」頁存的姓名/電話/地址。
+    </p>
+
+    <div id="custBox">
+      <div class="muted" style="text-align:center;padding:60px">載入中…</div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
+  import { listCustomers, listWebOrders } from "./js/data.js";
+  import { exportCsv, fmtDate } from "./js/csv.js";
+
+  const me = await mountShell({ active: "customers" });
+  const $ = id => document.getElementById(id);
+
+  let customers = [];
+  let orderCountByUid = {};
+
+  async function load() {
+    const [list, allOrders] = await Promise.all([
+      listCustomers(),
+      listWebOrders()
+    ]);
+    customers = list;
+    // 每個 uid 的訂單總數 + 累計金額
+    orderCountByUid = {};
+    allOrders.forEach(o => {
+      if (!o.customerUid) return;
+      if (!orderCountByUid[o.customerUid]) orderCountByUid[o.customerUid] = { count: 0, total: 0, last: null };
+      orderCountByUid[o.customerUid].count += 1;
+      orderCountByUid[o.customerUid].total += Number(o.total) || 0;
+      const t = o.createdAt?.toMillis?.() || 0;
+      if (t > (orderCountByUid[o.customerUid].last || 0)) orderCountByUid[o.customerUid].last = t;
+    });
+    render();
+  }
+
+  function render() {
+    const kw = $("kw").value.trim().toLowerCase();
+    let list = customers;
+    if (kw) {
+      list = list.filter(c =>
+        (c.name||"").toLowerCase().includes(kw) ||
+        (c.displayName||"").toLowerCase().includes(kw) ||
+        (c.email||"").toLowerCase().includes(kw) ||
+        (c.phone||"").includes(kw)
+      );
+    }
+    // 按最後登入時間排序
+    list = list.slice().sort((a,b) => {
+      const ta = a.lastLogin?.toMillis?.() || 0;
+      const tb = b.lastLogin?.toMillis?.() || 0;
+      return tb - ta;
+    });
+    $("cntLabel").textContent = `· 共 ${list.length} 位會員`;
+
+    if (!list.length) {
+      $("custBox").innerHTML = `<div class="muted" style="text-align:center;padding:60px">
+        <div style="font-size:3rem">🍃</div>還沒有會員，等客人從購物網用 Google 登入後就會出現在這
+      </div>`;
+      return;
+    }
+
+    $("custBox").innerHTML = `<div style="background:#fff;border-radius:var(--r-md);border:1px solid var(--line);overflow:hidden">` +
+      list.map(c => {
+        const order = orderCountByUid[c.uid] || { count: 0, total: 0, last: null };
+        const dispName = c.name || c.displayName || c.email?.split("@")[0] || "(未命名)";
+        const avatar = c.photoURL
+          ? `<img class="cust-avatar" src="${c.photoURL}" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=&quot;cust-avatar fallback&quot;>👤</div>'">`
+          : `<div class="cust-avatar fallback">👤</div>`;
+        const phoneAddr = [];
+        if (c.phone)   phoneAddr.push(`📞 ${c.phone}`);
+        if (c.address) phoneAddr.push(`📍 ${c.address}`);
+        const lastLoginStr = c.lastLogin?.toDate ? fmtDate(c.lastLogin) : "—";
+        const lastOrderStr = order.last ? fmtDate(new Date(order.last)) : "—";
+        return `<div class="cust-row">
+          ${avatar}
+          <div>
+            <div class="cust-name">${dispName}</div>
+            <div class="cust-email">${c.email || ""}</div>
+            ${phoneAddr.length ? `<div class="cust-phone">${phoneAddr.join("　")}</div>` : ""}
+          </div>
+          <div class="cust-meta">
+            最後登入<br>${lastLoginStr}
+          </div>
+          <div class="cust-orders">
+            <span class="order-badge">${order.count} 單</span>
+            <div class="muted" style="font-size:.78rem;margin-top:4px">累計 ${fmt.money(order.total)}<br>最後 ${lastOrderStr}</div>
+          </div>
+        </div>`;
+      }).join("") + `</div>`;
+  }
+
+  $("kw").addEventListener("input", render);
+
+  $("btnExport").addEventListener("click", () => {
+    const list = customers.map(c => {
+      const order = orderCountByUid[c.uid] || { count: 0, total: 0, last: null };
+      return {
+        name: c.name || c.displayName || "",
+        email: c.email || "",
+        phone: c.phone || "",
+        address: c.address || "",
+        lastLogin: c.lastLogin,
+        orderCount: order.count,
+        orderTotal: order.total,
+        lastOrder: order.last
+      };
+    });
+    exportCsv(`果果家會員_${fmtDate(new Date())}.csv`, list, [
+      { key: "name", label: "姓名" },
+      { key: "email", label: "Email" },
+      { key: "phone", label: "電話" },
+      { key: "address", label: "地址" },
+      { key: "orderCount", label: "訂單數" },
+      { key: "orderTotal", label: "累計金額" },
+      { key: "lastLogin", label: "最後登入", format: fmtDate },
+      { key: "lastOrder", label: "最後訂購", format: v => v ? fmtDate(new Date(v)) : "" }
+    ]);
+    toast("✓ CSV 已下載", "ok");
+  });
+
+  load();
+</script>
+</body>
+</html>

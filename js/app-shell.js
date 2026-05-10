@@ -11,9 +11,11 @@ const NAV = [
   { href: "batches.html",    label: "訂單批次", icon: "📋", key: "batches" },
   { href: "sales.html",      label: "銷貨",     icon: "🛒", key: "sales" },
   { href: "purchase.html",   label: "進貨",     icon: "📦", key: "purchase" },
+  { href: "waste.html",      label: "損耗單",   icon: "🗑", key: "waste" },
   { href: "items.html",      label: "品項清單", icon: "🍎", key: "items" },
   { href: "shipping.html",   label: "出貨單",   icon: "🚚", key: "shipping" },
   { href: "reports.html",    label: "報表",     icon: "📊", key: "reports" },
+  { href: "customers.html",  label: "會員清單", icon: "👥", key: "customers" },
   { href: "articles.html",   label: "水果小教室", icon: "📚", key: "articles" },
   { href: "settings.html",   label: "設定",     icon: "⚙️", key: "settings", adminOnly: true },
 ];

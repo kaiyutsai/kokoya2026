@@ -118,6 +118,25 @@
       <div id="paymentStatus" class="muted" style="font-size:.85rem;margin-top:8px"></div>
     </div>
 
+    <!-- 水果大項分類 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-h"><h2>🍎 水果大項分類</h2></div>
+      <p class="muted" style="font-size:.9rem;line-height:1.7;margin:0 0 14px">
+        水果大項分類，用於品項清單、報表、銷售統計表的分組。<br>
+        這裡管理「分類」清單，到「品項清單」選擇分類後，<b>該品項就會歸類到這個大項底下</b>，點分類就能看屬於它的所有品項。
+      </p>
+      <div id="categoryList" class="lookup-list"></div>
+      <div class="row-fields" style="margin-top:14px">
+        <input class="input" id="newCategory" placeholder="例：蘋果類">
+        <button class="btn primary" id="btnAddCategory" type="button">＋ 新增</button>
+      </div>
+      <div id="catItemsBlock" class="hidden" style="margin-top:14px;padding:12px 14px;background:var(--paper-2);border-radius:var(--r-md);border:1px solid var(--line)">
+        <div style="font-weight:700;margin-bottom:6px">📦 「<span id="catItemsTitle"></span>」分類底下的品項</div>
+        <div id="catItemsList" style="font-size:.92rem;line-height:1.85;color:var(--ink-2)"></div>
+        <div style="margin-top:8px"><a href="items.html" class="muted" style="font-size:.84rem">→ 到品項清單修改分類歸屬</a></div>
+      </div>
+    </div>
+
     <!-- 經辦人 -->
     <div class="card" style="margin-top:14px">
       <div class="card-h"><h2>👤 經辦人</h2></div>
@@ -163,7 +182,7 @@
 <script type="module">
   import { mountShell, toast, fmt, isAdmin } from "./js/app-shell.js";
   import { getLookups, saveLookups, getDataStats, clearCollection, resetTransactionsAndStock,
-           getSecrets, saveSecrets, getPayment, savePayment } from "./js/data.js";
+           getSecrets, saveSecrets, getPayment, savePayment, listItems } from "./js/data.js";
   import { clearApiKeyCache } from "./js/ai-parse.js";
 
   const me = await mountShell({ active: "settings" });
@@ -175,13 +194,16 @@
     boot();
   }
 
-  let lookups = { suppliers: [], deliveryStaff: [], handlers: [] };
+  let lookups = { suppliers: [], deliveryStaff: [], handlers: [], categories: [] };
+  let allItems = [];   // 給「分類底下品項」清單用
 
   async function boot() {
     lookups = await getLookups();
+    allItems = await listItems().catch(() => []);
     renderSuppliers();
     renderStaff();
     renderHandlers();
+    renderCategories();
     bindDataPanel();
     bindApiKeyPanel();
     loadApiKey();
@@ -334,6 +356,81 @@
   document.getElementById("btnAddHandler").addEventListener("click", addHandler);
   document.getElementById("newHandler").addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); addHandler(); }
+  });
+
+  // ---- 水果大項分類 ----
+  function renderCategories() {
+    const $list = document.getElementById("categoryList");
+    const cats = lookups.categories || [];
+    $list.innerHTML = cats.map((name, i) => {
+      const itemCount = allItems.filter(x => (x.category||"") === name).length;
+      return `<span class="lookup-pill" data-cat-pill="${name}" style="cursor:pointer">
+        🍎 ${name} <span style="background:#fff;color:var(--orange-deep);border-radius:999px;padding:1px 8px;font-size:.74rem;font-weight:700">${itemCount}</span>
+        <button data-i="${i}" data-rm-cat title="移除">✕</button>
+      </span>`;
+    }).join("") || `<span class="muted" style="font-style:italic">尚未建立分類</span>`;
+
+    // 點 pill 看分類底下品項
+    $list.querySelectorAll("[data-cat-pill]").forEach(pill => {
+      pill.addEventListener("click", e => {
+        if (e.target.closest("[data-rm-cat]")) return;   // 點到「✕」不觸發
+        showCatItems(pill.dataset.catPill);
+      });
+    });
+    // 移除按鈕
+    $list.querySelectorAll("[data-rm-cat]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const i = Number(btn.dataset.i);
+        const name = lookups.categories[i];
+        const inUse = allItems.filter(x => (x.category||"") === name).length;
+        const msg = inUse
+          ? `「${name}」目前有 ${inUse} 個品項屬於此分類。\n移除分類後這些品項會變成「未分類」。\n要繼續嗎？`
+          : `移除分類「${name}」？`;
+        if (!confirm(msg)) return;
+        lookups.categories.splice(i, 1);
+        renderCategories();
+        await persist();
+        document.getElementById("catItemsBlock").classList.add("hidden");
+        toast("已移除", "ok");
+      });
+    });
+  }
+
+  function showCatItems(name) {
+    const items = allItems.filter(x => (x.category||"") === name);
+    document.getElementById("catItemsTitle").textContent = name;
+    const $box = document.getElementById("catItemsList");
+    if (!items.length) {
+      $box.innerHTML = `<span class="muted">這個分類底下還沒有品項。到「品項清單」編輯品項，把分類設為「${name}」即可歸類。</span>`;
+    } else {
+      $box.innerHTML = items
+        .sort((a,b) => (a.name||"").localeCompare(b.name||"", "zh-Hant"))
+        .map(i => {
+          const stk = Number(i.stock||0);
+          const stockTag = stk <= 0 ? `<span class="tag out" style="font-size:.72rem">售完</span>`
+                       : stk <= Number(i.lowStock??5) ? `<span class="tag warn" style="font-size:.72rem">低庫存</span>`
+                       : "";
+          return `<div>• <b>${i.name}</b> ${stockTag} <span class="muted">— 庫存 ${fmt.num(stk)} ${i.unit||""}　售價 ${i.price?fmt.money(i.price):"未定"}</span></div>`;
+        }).join("");
+    }
+    document.getElementById("catItemsBlock").classList.remove("hidden");
+  }
+
+  async function addCategory() {
+    const $input = document.getElementById("newCategory");
+    const v = $input.value.trim();
+    if (!v) return toast("請輸入分類名稱", "err");
+    lookups.categories = lookups.categories || [];
+    if (lookups.categories.includes(v)) return toast("已存在相同分類", "err");
+    lookups.categories.push(v);
+    $input.value = "";
+    renderCategories();
+    await persist();
+    toast("✓ 已新增分類", "ok");
+  }
+  document.getElementById("btnAddCategory").addEventListener("click", addCategory);
+  document.getElementById("newCategory").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addCategory(); }
   });
 
   // ============ API 金鑰 ============
