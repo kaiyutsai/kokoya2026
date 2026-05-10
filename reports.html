@@ -144,15 +144,21 @@
 
   let chDaily, chPie;
 
-  // 用當下 items.avgCost 重算成本（給經辦人銷售統計用，COGS 視角）
+  // 算成本（COGS 視角）— 優先用「成交當下鎖定」的成本
+  // 為什麼不重算：avgCost 會隨進貨更新，回頭算會讓「過去銷貨」的成本浮動，
+  // 跟單據存的 cost 不一致，也會在進貨後讓舊銷貨利潤忽然變少。
   function computeLineCost(l, itemMap) {
+    const savedUnit = Number(l.unitCost);
+    if (savedUnit > 0) return Number(l.qty) * savedUnit;
+    // 舊資料沒存 unitCost → 用當下 avgCost 補（最後手段）
     const item = itemMap[l.itemId];
     const currentAvg = item ? Number(item.avgCost) || 0 : 0;
-    const savedUnit  = Number(l.unitCost) || 0;
-    const unit = currentAvg > 0 ? currentAvg : savedUnit;
-    return Number(l.qty) * unit;
+    return Number(l.qty) * currentAvg;
   }
   function computeSaleCost(s, itemMap) {
+    // 優先用單據存的 cost（成交當下已鎖定）
+    const stored = Number(s.cost);
+    if (stored > 0) return stored;
     return (s.lines||[]).reduce((tot, l) => tot + computeLineCost(l, itemMap), 0);
   }
 
